@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - env: grid
+  - env: cropenv
   - gflownet: trajectorybalance
   - loss: trajectorybalance
   - policy: mlp_${gflownet}
