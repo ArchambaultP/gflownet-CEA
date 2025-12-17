@@ -3,7 +3,7 @@ defaults:
   # - override /env: cropenv
   # - override /gflownet: trajectorybalance
   # - override /loss: trajectorybalance
-  # - override /proxy: box/hartmann
+  # - override /proxy: secondEdition
   # - override /logger: wandb
 
 
@@ -15,23 +15,25 @@ env:
   growth_step: 1
   growth_period: 2
 
+length_traj: 10
+
 # Buffer
 buffer:
   test:
     type: uniform
-    n: 1000
+    n: 1
     seed: 0
 
 # GFlowNet hyperparameters
-gflownet:
-  random_action_prob: 0.1
-  optimizer:
-    batch_size:
-      forward: 100
-    lr: 0.001
-    # z_dim: 16
-    # lr_z_mult: 100
-    n_train_steps: 10000
+# gflownet:
+#   random_action_prob: 0.1
+#   optimizer:
+#     batch_size:
+#       forward: 10
+#     lr: 0.001
+#     # z_dim: 16
+#     # lr_z_mult: 100
+#     n_train_steps: 10
 
 # Policy
 policy:
@@ -50,9 +52,9 @@ policy:
 # Evaluator
 evaluator:
   first_it: False
-  period: 500
-  n: 1000
-  checkpoints_period: 500
+  period: 5
+  n: 10
+  checkpoints_period: 5
 
 id: cropenv
 # Dimensions of hypergrid

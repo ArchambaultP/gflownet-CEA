@@ -34,11 +34,6 @@ class ActionStep:
     temperature: 1
     light_intensity: 10
 
-# @dataclass 
-# class EnvState:
-#     profile: Profile
-#     crop: Crop
-
 class CropEnv(GFlowNetEnv):
 
     def __init__(self, init_profile: Profile = None, fmu_path = 'FMU/growth.fmu', growth_step=1, growth_period=2,device="CUDA", **kwargs):
@@ -210,6 +205,10 @@ class CropEnv(GFlowNetEnv):
         states = tfloat(states, device=self.device, float_type=float32)
         return states
     
+    def states2proxy(self, states):
+        print(f"states2proxy: {states}")
+        return states
+    
     # TODO, see base code for doc
     def _get_max_trajectory_length(self):
         return 14*7
@@ -268,6 +267,8 @@ class CropEnv(GFlowNetEnv):
         this method.
         """
 
+        print("Backward mask")
+
         state = self._get_state(state)
         done = self._get_done(done)
         if parents_a is None:
@@ -276,6 +277,11 @@ class CropEnv(GFlowNetEnv):
         for pa in parents_a:
             # breakpoint()
             mask[self.action_space.index(pa[0])] = False
+
+        # breakpoint()
+
+        # Hard-coded, TODO: Review logic
+        mask = [False, False, False, False, True]
         return mask
     
     @staticmethod
@@ -293,7 +299,7 @@ class CropEnv(GFlowNetEnv):
             for cond in conditions:
                 d = {
                     'CO2_Air':600,
-                    'PAR': 200, # should depend on cond.light_intensity
+                    'PAR': 197 * cond.light_intensity, # should depend on cond.light_intensity
                     'TCan': cond.target_temp,
                     'TCan24': avg_temp,
                     'TSoil24': avg_temp - 2,
