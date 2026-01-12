@@ -941,6 +941,9 @@ class GFlowNetAgent:
             total=self.n_train_steps,
             disable=self.logger.progressbar["skip"],
         )
+
+
+
         for self.it in range(self.it, self.n_train_steps + 1):
             # Test and log
             if self.evaluator.should_eval(self.it):
@@ -955,6 +958,8 @@ class GFlowNetAgent:
                 device=self.device,
                 float_type=self.float,
             )
+
+            # breakpoint()
             for j in range(self.sttr):
                 sub_batch, times = self.sample_batch(
                     n_forward=self.batch_size.forward,

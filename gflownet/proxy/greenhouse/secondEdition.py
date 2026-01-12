@@ -14,6 +14,10 @@ class GreenHouseChallenge2ndEdition(Proxy):
     def __init__(self, model_fp="gflownet/proxy/greenhouse/secondEdition.pkl", n_samples=1000, **kwargs):
         super().__init__(**kwargs)
         train_X, train_Y, val_X, val_Y, test_X, test_Y = load_data()
+
+        self.train_X = train_X
+        self.train_Y = train_Y
+
         if os.path.exists(model_fp):
             print(f"Loading saved model: {model_fp}")
             with open(model_fp, 'rb') as file:
@@ -22,36 +26,28 @@ class GreenHouseChallenge2ndEdition(Proxy):
             print(f"Training new model: {model_fp}")
             self.model = self._train(train_X, train_Y)
         
-
-
         # self.n_samples = n_samples
         # samples = self.model.posterior.rsample(sample_shape=torch.Size([self.n_samples]))
         # samples = samples.squeeze(-1).cpu().numpy()
 
 
-    # def set_n_dim(self, n_dim):
-    #     # self.n_dim is never used in this env,
-    #     # this is just to make molecule env work with htorus
-    #     self.n_dim = n_dim
-
     # Decorator to stop proxy model from training
     # @torch.no_grad()
     def __call__(self, states_proxy):
-        # output of the model is exp(-energy) / 100
-        # x = states_proxy % (2 * np.pi)
-        # rewards = -np.log(self.model.predict(x) * 100)
-        # return torch.tensor(
-        #     rewards,
-        #     dtype=self.float,
-        #     device=self.device,
-        # )
-        
-        # breakpoint()
+        #TODO: reward maybe should depend on simulated crop_state        
+        gp_state = states_proxy[:, [0, -2, -1]]
+        simulated_crop_state = states_proxy[:, [2]]
 
-        print("test")
+        posterior = self.model.posterior(gp_state)
+        mean = posterior.mean
+        variance = posterior.variance
+        std = variance.sqrt()
+        beta = 0.2 # TODO: play with this
+
+        ucb = mean + (beta**0.5)*std
 
         # TODO: set reward as distance between sampled GP and states_proxy
-        return torch.tensor(100,
+        return torch.tensor(ucb,
                             dtype=self.float,
                             device=self.device)
         

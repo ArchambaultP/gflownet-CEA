@@ -16,7 +16,7 @@ optimizer:
   # Number of trajectories of each kind
   batch_size:
     # Forward on-policy (possibly tempered and/or with random actions)
-    forward: 10
+    forward: 1
     # Backward from training set
     backward_dataset: 0
     # Backward from replay buffer
