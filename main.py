@@ -6,8 +6,12 @@ from fmu.tomato_controller import TomatoController
 # from typing import List
 # from gflownet.envs.greenhouse.crop_env import CropEnv
 # from gflownet.proxy.greenhouse.secondEdition import GreenHouseChallenge2ndEdition
-# from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
+from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
+from gflownet.envs.greenhouse.constants import (
+    BASELINE_PARAMETERS, INITIAL_CONDITIONS, PARAMETER_BOUNDS
+)
 
+from fmu.fmu_pool import run_parallel
 # import pandas as pd
 # import datetime
 # from data.greenhouse.secondEdition.extract import load_data
@@ -45,6 +49,32 @@ def main():
     setpoints = [86400.0 * 30]
 
     out = tomato.simulate(inputs, setpoints, None)
+    TEAM_IDS = [
+        "Reference",
+        "Digilog",
+        "IUACAAS",
+        "Automatoes",
+        "TheAutomators",
+        "AICU",
+    ]
+    
+    DATA_DIR = "data/greenhouse/secondEdition"
+    FMU_PATH = "fmu/FMU/tomato.fmu"
+    STEP_SIZE = 120.0
+    args_by_team = {}
+    team_obs = {}
+    init = BASELINE_PARAMETERS | INITIAL_CONDITIONS
+    for t in TEAM_IDS:
+        data = CropSimulatorProxy.get_team_control_dataset(DATA_DIR, t)
+        input_trace = CropSimulatorProxy.compute_trace(data, delta="30min")
+        obs = CropSimulatorProxy.get_team_obs_dataset(DATA_DIR, t)
+        setpoints = (obs.index - obs.index.min())[1:].total_seconds().tolist()
+        args_by_team[t] = (input_trace, setpoints, init, STEP_SIZE)
+        team_obs[t] = obs
+
+    results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True, max_workers=1, work_dir=None)
+
+
 
     # out = proxy([test])
     # env = CropSimEnv(init_profile=None, fmu_path = 'fmu/FMU/tomato.fmu', growth_step=1, growth_period=2,device="CUDA")
