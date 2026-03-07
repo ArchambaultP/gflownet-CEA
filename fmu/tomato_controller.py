@@ -1,5 +1,5 @@
 
-from gflownet.envs.greenhouse.constants import parse_output_type
+from gflownet.envs.greenhouse.constants import parse_output_type, BASELINE_PARAMETERS, INITIAL_CONDITIONS
 import tempfile
 from fmpy import read_model_description, extract
 from fmpy.fmi3 import FMU3Slave
@@ -138,7 +138,9 @@ class TomatoController(FMUController):
         out = []
         current_time = 0.0
         
-        # init_conds = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS}
+        if init_conds is None:
+            init_conds = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS}
+
         self.set_init_cond(init_conds, input_dict={"CO2_Air":400.0, "PAR_gh":500.0, "TCan":20.0, "TCan24":20.0})
         while current_time < self.stop_time:
             if inputs:
