@@ -9,8 +9,10 @@ import subprocess
 import json
 import sys
 
-def run_parallel(args_by_team, fmu_path, timeout=15, verbose=False, max_workers=3):
-    tmp_dir = tempfile.mkdtemp()
+def run_parallel(args_by_team, fmu_path, timeout=15, verbose=False, max_workers=3, work_dir=None):
+    if work_dir is None:
+        work_dir = os.path.dirname(os.path.abspath(fmu_path))
+    tmp_dir = tempfile.mkdtemp(dir=work_dir)
 
     # Pre-copy and pre-serialize
     team_meta = {}
@@ -38,8 +40,8 @@ def run_parallel(args_by_team, fmu_path, timeout=15, verbose=False, max_workers=
                 env={**os.environ,
                      "OPENBLAS_NUM_THREADS": "1",
                      "MKL_NUM_THREADS": "1",
-                     "OMP_NUM_THREADS": "1"},
-                stderr=subprocess.PIPE,  # capture stderr
+                     "OMP_NUM_THREADS": "1",
+                     "TMPDIR": tmp_dir},  # FMU extracts here too
             )
             procs[t] = (p, result_file)
             if verbose:

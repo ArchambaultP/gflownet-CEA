@@ -41,7 +41,7 @@ def main():
         args_by_team[t] = (input_trace, setpoints, init, STEP_SIZE)
         team_obs[t] = obs
 
-    results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True)
+    results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True, max_workers=1, work_dir=None)
 
     team_losses = []
     for t, sim_out in results.items():
@@ -63,7 +63,6 @@ def main():
             print(f"  {t}: L={np.mean(team_errors):.4f} ({len(team_errors)} observations)")
 
     if not team_losses:
-        print(team_losses)
         print("ERROR: No teams completed successfully")
     else:
         L_midpoint = np.mean(team_losses)
