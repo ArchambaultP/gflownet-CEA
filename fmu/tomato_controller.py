@@ -37,23 +37,16 @@ class TomatoController(FMUController):
 
 
     def instantiate_clean_fmu(self):
-        import sys
-        print("[FMU] Creating temp dir...", file=sys.stderr, flush=True)
         unzipdir = tempfile.mkdtemp()
-        print(f"[FMU] Extracting to {unzipdir}...", file=sys.stderr, flush=True)
         extract(self.fmu_path, unzipdir)
-        print(f"[FMU] Reading model description...", file=sys.stderr, flush=True)
         model_description = read_model_description(unzipdir)
-        print(f"[FMU] Creating FMU3Slave...", file=sys.stderr, flush=True)
         fmu = FMU3Slave(
             guid=model_description.guid,
             unzipDirectory=unzipdir,
             modelIdentifier=model_description.coSimulation.modelIdentifier,
             instanceName='instance1'
         )
-        print(f"[FMU] Calling instantiate()...", file=sys.stderr, flush=True)
         fmu.instantiate()
-        print(f"[FMU] Done", file=sys.stderr, flush=True)
         return fmu, model_description, unzipdir
     
     def set_init_cond(self, parameter_dict, input_dict=None):
