@@ -6,6 +6,11 @@ from gflownet.envs.greenhouse.constants import (
 from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
 from fmu.fmu_pool import run_parallel
 from fmu.tomato_controller import TomatoController
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_MAIN_FREE"] = "1"  # don't hold onto memory after use
 
 TEAM_IDS = [
     "Reference",
@@ -33,20 +38,8 @@ def main():
         input_trace = CropSimulatorProxy.compute_trace(data, delta="30min")
         obs = CropSimulatorProxy.get_team_obs_dataset(DATA_DIR, t)
         setpoints = (obs.index - obs.index.min())[1:].total_seconds().tolist()
-
         args_by_team[t] = (input_trace, setpoints, init, STEP_SIZE)
         team_obs[t] = obs
-
-
-        # controller = TomatoController(
-        #     FMU_PATH,
-        #     start_time=0.0,
-        #     stop_time=input_trace[-1][0],
-        #     step_size=STEP_SIZE,
-        #     logger=log_callback,
-        # )
-        # out = controller.simulate(input_trace, setpoints, init_conds=init)
-        # breakpoint()
 
     results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True)
 

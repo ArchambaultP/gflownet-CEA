@@ -7,6 +7,10 @@ import multiprocessing as mp
 import traceback
 
 def _worker(conn, local_fmu, args_file):
+    import os
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["OMP_NUM_THREADS"] = "1"
     try:
         with open(args_file, 'rb') as f:
             input_trace, setpoints, init_conds, step_size = pickle.load(f)
