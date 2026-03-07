@@ -63,6 +63,7 @@ def main():
             print(f"  {t}: L={np.mean(team_errors):.4f} ({len(team_errors)} observations)")
 
     if not team_losses:
+        print(team_losses)
         print("ERROR: No teams completed successfully")
     else:
         L_midpoint = np.mean(team_losses)
