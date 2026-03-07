@@ -20,7 +20,7 @@ import shutil
 import tempfile
 import multiprocessing as mp
 # mp.set_start_method("spawn", force=True)
-from fmu.fmu_pool import run_parallel
+from fmu.pool import PersistentFMUPool
 
 # mp.set_start_method("spawn", force=True)
 
@@ -55,6 +55,12 @@ class CropSimulatorProxy(Proxy):
             control_df = self.get_team_control_dataset(self.data_dir, t)
             self.team_input[t] = self.compute_trace(control_df, delta="30min")
             self.team_obs_data[t] = self.get_team_obs_dataset(self.data_dir, t)
+
+
+        self.pool = PersistentFMUPool(
+            self.teams, self.fmu_path, self.data_dir,
+            step_size=self.step_size, max_uses=1,
+        )
     
     @torch.no_grad()
     def __call__(self, states_proxy):
@@ -63,42 +69,62 @@ class CropSimulatorProxy(Proxy):
             for i, name in enumerate(self.parameter_names):
                 config[name] = batch[i]
 
-        # Build args per team
-        args_by_team = {}
-        for t in self.teams:
-            obs_data = self.team_obs_data[t]
-            setpoints = (obs_data.index - obs_data.index.min())[1:].total_seconds().tolist()
-            args_by_team[t] = (self.team_input[t], setpoints, config, self.step_size)
+        config = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **config}
 
-        # Run all teams in parallel
-        results = run_parallel(args_by_team, self.fmu_path, timeout=10, verbose=True)
-
-        # Score
-        team_losses = []
-        for t, sim_out in results.items():
-            obs_data = self.team_obs_data[t]
-            team_errors = []
-            for idx, (time_val, output) in enumerate(sim_out):
-                y_DM = obs_data["DM_harvest_obs"].iloc[idx]
-                y_N = obs_data["N_harvest_per_m2"].iloc[idx]
-                y_hat_DM = output["C_harvest"]
-                y_hat_N = output["N_harvest"]
-
-                if y_DM > 0:
-                    team_errors.append(((y_hat_DM - y_DM) / y_DM) ** 2)
-                if y_N > 0:
-                    team_errors.append(((y_hat_N - y_N) / y_N) ** 2)
-
-            if team_errors:
-                team_losses.append(np.mean(team_errors))
+        team_losses = self.pool.evaluate(config)
 
         if not team_losses:
             reward = 0.0
         else:
-            L = np.mean(team_losses)
+            per_team = [np.mean(errs) for errs in team_losses]
+            L = np.mean(per_team)
             reward = np.exp(-self.beta * L)
 
         return torch.tensor(reward, dtype=self.float, device=self.device)
+    
+    # @torch.no_grad()
+    # def __call__(self, states_proxy):
+    #     config = {}
+    #     for batch in states_proxy:
+    #         for i, name in enumerate(self.parameter_names):
+    #             config[name] = batch[i]
+
+    #     # Build args per team
+    #     args_by_team = {}
+    #     for t in self.teams:
+    #         obs_data = self.team_obs_data[t]
+    #         setpoints = (obs_data.index - obs_data.index.min())[1:].total_seconds().tolist()
+    #         args_by_team[t] = (self.team_input[t], setpoints, config, self.step_size)
+
+    #     # Run all teams in parallel
+    #     results = run_parallel(args_by_team, self.fmu_path, timeout=10, verbose=True)
+
+    #     # Score
+    #     team_losses = []
+    #     for t, sim_out in results.items():
+    #         obs_data = self.team_obs_data[t]
+    #         team_errors = []
+    #         for idx, (time_val, output) in enumerate(sim_out):
+    #             y_DM = obs_data["DM_harvest_obs"].iloc[idx]
+    #             y_N = obs_data["N_harvest_per_m2"].iloc[idx]
+    #             y_hat_DM = output["C_harvest"]
+    #             y_hat_N = output["N_harvest"]
+
+    #             if y_DM > 0:
+    #                 team_errors.append(((y_hat_DM - y_DM) / y_DM) ** 2)
+    #             if y_N > 0:
+    #                 team_errors.append(((y_hat_N - y_N) / y_N) ** 2)
+
+    #         if team_errors:
+    #             team_losses.append(np.mean(team_errors))
+
+    #     if not team_losses:
+    #         reward = 0.0
+    #     else:
+    #         L = np.mean(team_losses)
+    #         reward = np.exp(-self.beta * L)
+
+    #     return torch.tensor(reward, dtype=self.float, device=self.device)
     
     @staticmethod
     def compare_to_baseline(c):
@@ -110,14 +136,6 @@ class CropSimulatorProxy(Proxy):
             val1 = float(c1.get(key, np.nan))
             val2 = float(c2.get(key, np.nan))
             print(f"{key}: param={val1} | baseline={val2} | diff={np.abs(val1-val2)}")
-
-    @staticmethod
-    def preprocess_init_cond(parameter_dict):
-        # k, (ref,v) in formatted_res
-        out = {}
-        for k,v in parameter_dict.items():
-            out[k] = (-1, v)
-        return out
     
     @staticmethod
     def get_team_control_dataset(data_dir, team):

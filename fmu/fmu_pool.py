@@ -3,10 +3,10 @@ import os
 import shutil
 import pickle
 import tempfile
-import traceback
+import struct
 import subprocess
 import sys
-
+import select
 
 # ─── Worker script for run_parallel (one team per worker) ───
 
@@ -109,6 +109,17 @@ with open(result_file, 'wb') as f:
     pickle.dump(results, f)
 """
 
+def _recv_timeout(pipe, timeout=15):
+    """Receive with timeout. Raises TimeoutError if no data arrives."""
+    ready, _, _ = select.select([pipe], [], [], timeout)
+    if not ready:
+        raise TimeoutError("Worker did not respond in time")
+    raw = pipe.read(4)
+    if not raw:
+        raise EOFError
+    size = struct.unpack('<I', raw)[0]
+    data = pipe.read(size)
+    return pickle.loads(data)
 
 # ─── Public API ───
 
@@ -175,6 +186,203 @@ def run_parallel(args_by_team, fmu_path, timeout=15, verbose=False, max_workers=
     shutil.rmtree(tmp_dir, ignore_errors=True)
     return results
 
+def _send(pipe, obj):
+    """Send a pickled object with length prefix."""
+    data = pickle.dumps(obj)
+    pipe.write(struct.pack('<I', len(data)))
+    pipe.write(data)
+    pipe.flush()
+
+def _recv(pipe):
+    """Receive a length-prefixed pickled object."""
+    raw = pipe.read(4)
+    if not raw:
+        raise EOFError
+    size = struct.unpack('<I', raw)[0]
+    data = pipe.read(size)
+    return pickle.loads(data)
+
+
+_PERSISTENT_WORKER = """
+import sys, os, pickle, struct, traceback
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
+team, fmu_path, data_dir, step_size, max_uses = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4]), int(sys.argv[5])
+
+from fmu.tomato_controller import TomatoController
+from gflownet.envs.greenhouse.constants import BASELINE_PARAMETERS, INITIAL_CONDITIONS
+from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
+
+team_data = CropSimulatorProxy.get_team_obs_dataset(data_dir, team)
+input_trace = CropSimulatorProxy.compute_trace(
+    CropSimulatorProxy.get_team_control_dataset(data_dir, team), delta='30min')
+setpoints = (team_data.index - team_data.index.min())[1:].total_seconds().tolist()
+
+def send(obj):
+    data = pickle.dumps(obj)
+    sys.stdout.buffer.write(struct.pack('<I', len(data)))
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+
+def recv():
+    raw = sys.stdin.buffer.read(4)
+    if not raw:
+        raise EOFError
+    size = struct.unpack('<I', raw)[0]
+    return pickle.loads(sys.stdin.buffer.read(size))
+
+def make_controller():
+    return TomatoController(
+        fmu_path, start_time=0, stop_time=86400.0 * 200,
+        step_size=step_size, logger=None)
+
+controller = make_controller()
+use_count = 0
+
+# Signal ready
+send("READY")
+
+while True:
+    try:
+        msg = recv()
+    except EOFError:
+        break
+
+    if msg == "STOP":
+        break
+
+    config = msg
+
+    if use_count >= max_uses:
+        controller = make_controller()
+        use_count = 0
+
+    try:
+        sim_out = controller.simulate(input_trace, setpoints, init_conds=config)
+        use_count += 1
+
+        errors = []
+        for idx, (_, output) in enumerate(sim_out):
+            y_DM = team_data["DM_harvest_obs"].iloc[idx]
+            y_N = team_data["N_harvest_per_m2"].iloc[idx]
+            y_hat_DM = output["C_harvest"]
+            y_hat_N = output["N_harvest"]
+            if y_DM > 0:
+                errors.append(((y_hat_DM - y_DM) / y_DM) ** 2)
+            if y_N > 0:
+                errors.append(((y_hat_N - y_N) / y_N) ** 2)
+
+        send(("OK", errors))
+    except Exception as e:
+        # Reinstantiate after error
+        controller = make_controller()
+        use_count = 0
+        send(("ERROR", str(e)))
+"""
+
+class PersistentFMUPool:
+    """Pool of long-lived FMU worker subprocesses, one per team."""
+
+    def __init__(self, teams, fmu_path, data_dir, step_size=120.0, max_uses=3):
+        self.teams = teams
+        self.fmu_path = fmu_path
+        self.data_dir = data_dir
+        self.step_size = step_size
+        self.max_uses = max_uses
+        self.workers = {}
+
+        for t in teams:
+            self._start_worker(t)
+
+    def _start_worker(self, team):
+        p = subprocess.Popen(
+            [sys.executable, "-c", _PERSISTENT_WORKER,
+             team, self.fmu_path, self.data_dir,
+             str(self.step_size), str(self.max_uses)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ,
+                 "OPENBLAS_NUM_THREADS": "1",
+                 "MKL_NUM_THREADS": "1",
+                 "OMP_NUM_THREADS": "1"},
+            cwd=os.getcwd(),
+        )
+        try:
+            ready = _recv(p.stdout)
+            assert ready == "READY"
+        except Exception:
+            stderr = p.stderr.read().decode()
+            p.kill()
+            p.wait()
+            print(f"Worker {team} failed to start: {stderr}")
+            raise
+        self.workers[team] = p
+
+    def _restart_worker(self, team):
+        p = self.workers.get(team)
+        if p:
+            try:
+                p.kill()
+                p.wait()
+            except Exception:
+                pass
+        print(f"Restarting worker for team {team}")
+        self._start_worker(team)
+
+    def evaluate(self, config, timeout=10):
+        """Send config to all teams in parallel, collect errors."""
+        dead = []
+        for t, p in self.workers.items():
+            if p.poll() is not None:
+                dead.append(t)
+                continue
+            try:
+                _send(p.stdin, config)
+            except (BrokenPipeError, OSError):
+                dead.append(t)
+
+        for t in dead:
+            try:
+                self._restart_worker(t)
+                _send(self.workers[t].stdin, config)
+            except Exception as e:
+                print(f"Failed to restart worker {t}: {e}")
+
+        team_losses = []
+        for t, p in self.workers.items():
+            try:
+                status, payload = _recv_timeout(p.stdout, timeout=timeout)
+                if status == "OK" and payload:
+                    team_losses.append(payload)
+                elif status == "ERROR":
+                    print(f"FMU error for team {t}: {payload}")
+            except TimeoutError:
+                print(f"Worker {t} timed out, restarting")
+                try:
+                    self._restart_worker(t)
+                except Exception as e:
+                    print(f"Failed to restart worker {t}: {e}")
+            except EOFError:
+                stderr = p.stderr.read().decode()
+                print(f"Worker {t} died: {stderr}")
+                try:
+                    self._restart_worker(t)
+                except Exception as e:
+                    print(f"Failed to restart worker {t}: {e}")
+
+        return team_losses
+
+    def shutdown(self):
+        for t, p in self.workers.items():
+            try:
+                _send(p.stdin, "STOP")
+                p.wait(timeout=5)
+            except Exception:
+                p.kill()
+                p.wait()
 
 _SINGLE_EVAL_SCRIPT = """
 import sys, pickle, os, numpy as np

@@ -4,7 +4,7 @@ from gflownet.envs.greenhouse.constants import (
     BASELINE_PARAMETERS, INITIAL_CONDITIONS, PARAMETER_BOUNDS
 )
 from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
-from fmu.fmu_pool import run_parallel
+from fmu.pool import run_parallel
 from fmu.tomato_controller import TomatoController
 import os
 os.environ["OPENBLAS_NUM_THREADS"] = "1"

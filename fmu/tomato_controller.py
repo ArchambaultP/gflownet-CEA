@@ -154,7 +154,6 @@ class TomatoController(FMUController):
             else:
                 break
         
-        self.fmu.reset()
 
         return out
     

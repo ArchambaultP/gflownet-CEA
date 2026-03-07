@@ -6,7 +6,8 @@ from gflownet.envs.greenhouse.constants import (
     BASELINE_PARAMETERS, GROUP_ORDER, PERTURBATION_SCHEME,
     INITIAL_CONDITIONS, PARAMETER_BOUNDS
 )
-from fmu.fmu_pool import evaluate_all
+
+from fmu.pool.batch import evaluate_all
 
 DATA_DIR = "data/greenhouse/secondEdition"
 
