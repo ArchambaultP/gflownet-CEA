@@ -32,69 +32,47 @@ from fmu.fmu_pool import run_parallel
 # import pickle
 # import numpy as np
 
-TEAM_IDS = [
-    "Reference",
-    "Digilog",
-    "IUACAAS",
-    "Automatoes",
-    "TheAutomators",
-    "AICU",
-]
-
-DATA_DIR = "data/greenhouse/secondEdition"
-FMU_PATH = "fmu/FMU/tomato.fmu"
-STEP_SIZE = 120.0
 
 def log_callback(instance_environment, instance_name, status, category, message):
     print(f"[FMU] {category}: {message}")
 
 def main():
-    t = "Reference"
-    data = CropSimulatorProxy.get_team_control_dataset(DATA_DIR, t)
-    input_trace = CropSimulatorProxy.compute_trace(data, delta="30min")
-    obs = CropSimulatorProxy.get_team_obs_dataset(DATA_DIR, t)
-    setpoints = (obs.index - obs.index.min())[1:].total_seconds().tolist()
-
-    print(f"stop_time: {input_trace[-1][0]}")
-    print(f"setpoints: {setpoints}")
-    print(f"n_inputs: {len(input_trace)}")
-
-    tomato = TomatoController(
-        'fmu/FMU/tomato.fmu',
-        start_time=0,
-        stop_time=input_trace[-1][0],
-        step_size=120.0,
-        logger=log_callback,
-    )
-    out = tomato.simulate(input_trace, setpoints, None)
-    print(f"Direct result: {len(out)} outputs")
-
-# def main():
 
 
-#     tomato = TomatoController('fmu/FMU/tomato.fmu', 
-#                                         start_time=0, # inital simulation time (in seconds). should not change
-#                                         stop_time=86400.0 * 200, # Final simulation time (in seconds).
-#                                         step_size=120.0, #numerical solver step size (in seconds)
-#                                         logger=log_callback)
+    tomato = TomatoController('fmu/FMU/tomato.fmu', 
+                                        start_time=0, # inital simulation time (in seconds). should not change
+                                        stop_time=86400.0 * 200, # Final simulation time (in seconds).
+                                        step_size=120.0, #numerical solver step size (in seconds)
+                                        logger=log_callback)
 
-#     inputs = [(0, {"CO2_Air":400.0, "PAR_gh":500.0, "TCan":20.0, "TCan24":20.0})]
-#     setpoints = [86400.0 * 30]
+    inputs = [(0, {"CO2_Air":400.0, "PAR_gh":500.0, "TCan":20.0, "TCan24":20.0})]
+    setpoints = [86400.0 * 30]
 
-#     out = tomato.simulate(inputs, setpoints, None)
+    out = tomato.simulate(inputs, setpoints, None)
+    TEAM_IDS = [
+        "Reference",
+        "Digilog",
+        "IUACAAS",
+        "Automatoes",
+        "TheAutomators",
+        "AICU",
+    ]
+    
+    DATA_DIR = "data/greenhouse/secondEdition"
+    FMU_PATH = "fmu/FMU/tomato.fmu"
+    STEP_SIZE = 120.0
+    args_by_team = {}
+    team_obs = {}
+    init = BASELINE_PARAMETERS | INITIAL_CONDITIONS
+    for t in TEAM_IDS:
+        data = CropSimulatorProxy.get_team_control_dataset(DATA_DIR, t)
+        input_trace = CropSimulatorProxy.compute_trace(data, delta="30min")
+        obs = CropSimulatorProxy.get_team_obs_dataset(DATA_DIR, t)
+        setpoints = (obs.index - obs.index.min())[1:].total_seconds().tolist()
+        args_by_team[t] = (input_trace, setpoints, init, STEP_SIZE)
+        team_obs[t] = obs
 
-#     args_by_team = {}
-#     team_obs = {}
-#     init = BASELINE_PARAMETERS | INITIAL_CONDITIONS
-#     for t in TEAM_IDS:
-#         data = CropSimulatorProxy.get_team_control_dataset(DATA_DIR, t)
-#         input_trace = CropSimulatorProxy.compute_trace(data, delta="30min")
-#         obs = CropSimulatorProxy.get_team_obs_dataset(DATA_DIR, t)
-#         setpoints = (obs.index - obs.index.min())[1:].total_seconds().tolist()
-#         args_by_team[t] = (input_trace, setpoints, init, STEP_SIZE)
-#         team_obs[t] = obs
-
-#     results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True, max_workers=1, work_dir=None)
+    results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True, max_workers=1, work_dir=None)
 
 
     # out = proxy([test])
