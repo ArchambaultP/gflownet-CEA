@@ -41,7 +41,7 @@ def main():
         args_by_team[t] = (input_trace, setpoints, init, STEP_SIZE)
         team_obs[t] = obs
 
-    results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True, max_workers=1, work_dir=None)
+    results = run_parallel(args_by_team, FMU_PATH, timeout=30, verbose=True, max_workers=6, work_dir=None)
 
     team_losses = []
     for t, sim_out in results.items():
