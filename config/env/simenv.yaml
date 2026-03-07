@@ -1,0 +1,44 @@
+defaults:
+  - base
+  # - override /env: cropenv
+  # - override /gflownet: trajectorybalance
+  # - override /loss: trajectorybalance
+  # - override /proxy: secondEdition
+  # - override /logger: wandb
+
+
+_target_: gflownet.envs.greenhouse.sim_env.CropSimEnv
+
+
+growth_step: 30
+growth_period: 2
+
+# Buffer
+buffer:
+  test:
+    type: uniform
+    n: 1
+    seed: 0
+
+# Policy
+policy:
+  forward:
+    type: mlp
+    n_hid: 256
+    n_layers: 3
+    checkpoint: forward
+  backward:
+    shared_weights: False
+    type: mlp
+    n_hid: 256
+    n_layers: 3
+    checkpoint: backward
+
+# Evaluator
+evaluator:
+  first_it: False
+  period: 5
+  n: 1
+  checkpoints_period: 5
+
+id: simenv

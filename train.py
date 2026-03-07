@@ -15,7 +15,7 @@ from omegaconf import open_dict
 from gflownet.utils.common import gflownet_from_config
 
 
-@hydra.main(config_path="./config", config_name="train_crop", version_base="1.1")
+@hydra.main(config_path="./config", config_name="sim_calibration", version_base="1.1")
 def main(config):
 
     # Set and print working and logging directory
@@ -33,8 +33,6 @@ def main(config):
 
     # Initialize a GFlowNet agent from the configuration file
     gflownet = gflownet_from_config(config)
-
-    breakpoint()
 
     # Train GFlowNet
     gflownet.train()

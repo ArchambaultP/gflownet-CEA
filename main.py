@@ -1,14 +1,20 @@
 import torch
 from dataclasses import dataclass
 from tqdm import tqdm
-from models.plant import GrowthController
+# from models.plant import GrowthController
+# from models.tomato_controller import TomatoController
+from fmu.tomato_controller import TomatoController
+
 from typing import List
-from gflownet.envs.crop_env import CropEnv
+from gflownet.envs.greenhouse.crop_env import CropEnv
 from gflownet.proxy.greenhouse.secondEdition import GreenHouseChallenge2ndEdition
+from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
+
 import pandas as pd
 import datetime
 from data.greenhouse.secondEdition.extract import load_data
 
+from gflownet.envs.greenhouse.sim_env import CropSimEnv, BASELINE_PARAMETERS
 
 from botorch.models import SingleTaskGP
 from botorch.fit import fit_gpytorch_mll
@@ -19,16 +25,64 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.constraints import GreaterThan
 from gpytorch.kernels import MaternKernel, ScaleKernel
+
+from data.greenhouse.secondEdition.extract import load_prod_data, load_climate_data, extract_2nd_edition_climate_data, extract_2nd_edition_production_data
 import matplotlib.pyplot as plt
 import pickle
+import numpy as np
 
 
-
-
+def log_callback(instance_environment, instance_name, status, category, message):
+    print(f"[FMU] {category}: {message}")
 
 def main():
-    cropenv = CropEnv()
+    # cropenv = CropEnv()
     proxy = GreenHouseChallenge2ndEdition()
+
+    tomato = TomatoController('fmu/FMU/tomato_limited.fmu', 
+                                        start_time=0, # inital simulation time (in seconds). should not change
+                                        stop_time=86400.0 * 25, # Final simulation time (in seconds).
+                                        step_size=120.0, #numerical solver step size (in seconds)
+                                        logger=log_callback)
+    
+
+
+    test = BASELINE_PARAMETERS
+
+    # out = proxy([test])
+    breakpoint()
+    # env = CropSimEnv(init_profile=None, fmu_path = 'fmu/FMU/tomato.fmu', growth_step=1, growth_period=2,device="CUDA")
+    
+    
+
+    # params = [ "LAI_max", "SLA", "rho_can", "rho_floor", "n_plants", "K1", "K2", "J_max_leaf", "Jpot_activation", "Jpot_deactivation", "Jpot_entropy", "Jpot_ref_temp", "alpha", "deg_curv_elec_transport", "Tcan_CO2_comp_point", "net_ass_rate", "G_max", "CO2_air_stomata", "bias_g_Tcan24", "slope_g_Tcan24", "molar_gas_constant", "mass_CH20", "c_fruit_growth", "c_leaf_growth", "c_stem_growth", "c_fruit_maintenance", "c_leaf_maintenance", "c_stem_maintenance", "Q_10_maintenance", "rg_fruit", "rg_leaf", "rg_stem", "c_rgr", "TS_start", "TS_end", "c_dev1", "c_dev2", "n_fruit_phases", "r_fruit_Set", "k_sw_max_Cbuff", "k_sw_min_Cbuff", "c_max_buf_fruit_1", "c_max_buf_fruit_2", "s_MCairbuf_Cbuf", "s_MCbuforg_Cbuf", "s_harvest" ]
+    # param_dict = {}
+
+    # print("{")
+    # for s in params:
+    #     id = tomato.param_vars[s]
+    #     val = tomato.fmu.getFloat64([id])
+
+    #     print(f"\"{s}\":{round(val[0],5)},")
+    # print("}")
+
+    proxy = CropSimulatorProxy()
+    data_dir = "data/greenhouse/secondEdition"
+    team = "AICU"
+    climate_file = f"Reference/GreenhouseClimate.csv"
+    production_file = f"Reference/Production.csv"
+
+    out = proxy([[np.float64(0.65), np.float64(1700.0), np.float64(225.0), np.float64(43400.0), np.float64(195000.0), np.float64(710.0), 298.15, np.float64(0.7999999999999999), np.float64(0.7999999999999999), np.float64(3.75), np.float64(2.2), np.float64(2.75e-05), np.float64(800.0), np.float64(0.0), np.float64(2.26), np.float64(0.375), np.float64(-1.25), np.float64(-8.5e-09), np.float64(1.8999999999999998e-08), np.float64(0.29000000000000004), np.float64(1.5e-07), np.float64(0.29000000000000004), np.float64(4.2499999999999995e-07), np.float64(-1.25e-07), np.float64(1.14e-06), np.float64(3000000.0), np.float64(0.32), np.float64(1.85e-07), np.float64(0.644), np.float64(23400.0), np.float64(33.5), np.float64(23.5), np.float64(1490.0), np.float64(10.5), np.float64(15.0), 0.03, 8.314, 50.0, np.float64(4.25), np.float64(4.5), np.float64(0.185), np.float64(0.44999999999999996), np.float64(0.09), np.float64(0.06999999999999999), np.float64(0.096), np.float64(0.5), np.float64(-0.000275), np.float64(-0.000275), np.float64(-0.000275), np.float64(0.65), np.float64(1.25), np.float64(-0.95), np.float64(-1.25), np.float64(0.158)]]
+)
+
+
+    # test = proxy.simulate("AICU", BASELINE_PARAMETERS)
+    # breakpoint() 
+
+    # env.get_action_space()
+
+    breakpoint()
+    print("done")
     
     # train_X, train_Y, val_X, val_Y, test_X, test_Y = load_data()
 
@@ -94,7 +148,7 @@ def main():
     # plt.title("Posterior Samples at Training Inputs")
     # plt.show()
 
-    breakpoint()
+
 
 def test(model, train_X, train_Y, val_X):
 

@@ -7,6 +7,7 @@ from torchtyping import TensorType
 from gflownet.utils.common import tlong, tfloat
 from torch import float32
 from itertools import pairwise
+from models.plant import GrowthController
 
 @dataclass
 class Condition:
@@ -148,7 +149,7 @@ class CropEnv(GFlowNetEnv):
                 crop_state = crop_next.list()
                 self.t_index += 1
                 self.a_last = action
-
+                #TODO: Should probably append rather than replace the list to keep trajectory?
                 self.state = [(self.t_index, self.a_last, crop_state, env_next)]
                 self.n_actions += 1
 
