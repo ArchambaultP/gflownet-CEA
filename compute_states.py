@@ -47,9 +47,8 @@ def generate_all_terminal_states(step_fraction, start_from="midpoint"):
 def export_results(terminal_states, losses, beta, path):
     output = {}
     for combo, params in terminal_states.items():
-        breakpoint()
         L = losses[combo]
-        output[combo] = {
+        output[str(combo)] = {  # JSON keys must be strings
             "params": {k: float(v) for k, v in params.items()},
             "loss": float(L),
             "reward": float(np.exp(-beta * L)),
