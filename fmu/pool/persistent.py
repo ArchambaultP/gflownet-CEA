@@ -152,32 +152,25 @@ class PersistentFMUPool:
 
     def evaluate(self, config, timeout=15):
         """Send config to all teams, collect per-team errors.
-
-        Returns:
-            list of error lists, one per team that succeeded
+        Returns list of error lists, one per team that succeeded.
+        Skips any team whose worker is dead or fails — no retries.
         """
-        # Send to all live workers
-        dead = []
+        # Send to all live workers, skip dead ones
+        live_teams = []
         for t, p in self.workers.items():
             if p.poll() is not None:
-                dead.append(t)
+                print(f"Worker {t} already dead, skipping")
                 continue
             try:
                 send(p.stdin, config)
+                live_teams.append(t)
             except (BrokenPipeError, OSError):
-                dead.append(t)
+                print(f"Worker {t} pipe broken, skipping")
 
-        # Restart dead workers and retry
-        for t in dead:
-            try:
-                self._restart_worker(t)
-                send(self.workers[t].stdin, config)
-            except Exception as e:
-                print(f"Failed to restart worker {t}: {e}")
-
-        # Collect results
+        # Collect results only from teams we successfully sent to
         team_losses = []
-        for t, p in self.workers.items():
+        for t in live_teams:
+            p = self.workers[t]
             try:
                 status, payload = recv_timeout(p.stdout, timeout=timeout)
                 if status == "OK" and payload:
@@ -185,18 +178,10 @@ class PersistentFMUPool:
                 elif status == "ERROR":
                     print(f"FMU error for team {t}: {payload}")
             except TimeoutError:
-                print(f"Worker {t} timed out, restarting")
-                try:
-                    self._restart_worker(t)
-                except Exception as e:
-                    print(f"Failed to restart worker {t}: {e}")
+                print(f"Worker {t} timed out, killing")
+                p.kill()
             except EOFError:
-                stderr = p.stderr.read().decode()
-                print(f"Worker {t} died: {stderr}")
-                try:
-                    self._restart_worker(t)
-                except Exception as e:
-                    print(f"Failed to restart worker {t}: {e}")
+                print(f"Worker {t} died mid-response")
 
         return team_losses
 

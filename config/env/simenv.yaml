@@ -1,40 +1,43 @@
 defaults:
   - base
+  # - override /env: cropenv
+  # - override /gflownet: trajectorybalance
+  # - override /loss: trajectorybalance
+  # - override /proxy: secondEdition
+  # - override /logger: wandb
+
 
 _target_: gflownet.envs.greenhouse.sim_env.CropSimEnv
 
-growth_step: 30
-growth_period: 2
+
+precomputed: True
 
 # Buffer
 buffer:
   test:
     type: uniform
-    n: 100
+    n: 1
     seed: 0
-  replay:
-    capacity: 5000
 
-# Policy — 5-step trajectory, small discrete action space
-# Network doesn't need to be huge
+# Policy
 policy:
   forward:
     type: mlp
-    n_hid: 128
-    n_layers: 2
+    n_hid: 256
+    n_layers: 3
     checkpoint: forward
   backward:
     shared_weights: False
     type: mlp
-    n_hid: 128
-    n_layers: 2
+    n_hid: 256
+    n_layers: 3
     checkpoint: backward
 
-# Evaluator — log frequently since training is fast with cache
+# Evaluator
 evaluator:
-  first_it: True
-  period: 100
-  n: 100
-  checkpoints_period: 1000
+  first_it: False
+  period: 5
+  n: 1
+  checkpoints_period: 5
 
 id: simenv

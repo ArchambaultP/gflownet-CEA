@@ -18,7 +18,7 @@ from data.greenhouse.secondEdition.extract import (
 
 class CropSimulatorProxy(Proxy):
 
-    def __init__(self, reward_cache_path=None, beta=None, **kwargs):
+    def __init__(self, reward_cache_path=None, beta=None, precomputed=False, **kwargs):
         super().__init__(**kwargs)
 
         self.teams = [
@@ -30,7 +30,7 @@ class CropSimulatorProxy(Proxy):
         self.step_size = 120.0
         self.parameter_names = sorted(PARAMETER_BOUNDS.keys())
         self.beta = beta if beta is not None else 5.65881
-
+        self.precomputed = precomputed
         # Load precomputed cache if available
         self.reward_cache = {}
         self.cache_hits = 0
@@ -51,22 +51,19 @@ class CropSimulatorProxy(Proxy):
             raw = json.load(f)
 
         for key, entry in raw.items():
-            if isinstance(entry, dict) and "params" in entry:
-                params = entry["params"]
-                loss = entry["loss"]
-            elif isinstance(entry, dict) and "loss" not in entry:
-                # Format: {key: {param: value}} — no loss stored, skip
-                continue
-            else:
-                continue
+            params = entry["params"]
+            loss = entry["loss"]
+            # Re-key by parameter hash so proxy can look up from values
 
-            cache_key = self._hash_params(params)
+            cache_key = key
             self.reward_cache[cache_key] = loss
 
+        # Also store action-keyed version for debugging
+        self.action_cache = {k: v["loss"] for k, v in raw.items()}
+
     def _hash_params(self, params):
-        # Only hash the explored parameters, sorted, rounded
         rounded = tuple(
-            (k, round(float(params[k]), 8))
+            round(float(params[k]), 4)
             for k in self.parameter_names
             if k in params
         )
@@ -106,20 +103,17 @@ class CropSimulatorProxy(Proxy):
         out = []
 
         for batch in states_proxy:
-            # Build parameter config from GFlowNet output
-            config = {}
-            for i, name in enumerate(self.parameter_names):
-                config[name] = float(batch[i])
-
-            # Try cache first
-            cache_key = self._hash_params(config)
-            if cache_key in self.reward_cache:
-                loss = self.reward_cache[cache_key]
-                self.cache_hits += 1
+            if self.precomputed:
+                if batch in self.reward_cache:
+                    loss = self.reward_cache[batch]
+                    self.cache_hits += 1
             else:
+                # Build parameter config from GFlowNet output
+                self.cache_misses +=1
+                config = {}
+                for i, name in enumerate(self.parameter_names):
+                    config[name] = float(batch[i])
                 loss = self._evaluate_live(config)
-                self.reward_cache[cache_key] = loss
-                self.cache_misses += 1
 
             reward = np.exp(-self.beta * loss)
             out.append(reward)

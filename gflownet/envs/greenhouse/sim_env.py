@@ -9,7 +9,7 @@ import numpy as np
 
 class CropSimEnv(FMUEnv):
 
-    def __init__(self, n_cycles=1, step_fraction=0.2, fmu_path = 'fmu/FMU/tomato.fmu',device="CUDA", **kwargs):
+    def __init__(self, n_cycles=1, step_fraction=0.2, fmu_path = 'fmu/FMU/tomato.fmu',device="CUDA", precomputed=False, **kwargs):
         self.source = [()]
         self.group2id = {g: i for i, g in enumerate(GROUP_ORDER)}
         self.id2group = {i: g for g, i in self.group2id.items()}
@@ -21,6 +21,7 @@ class CropSimEnv(FMUEnv):
         self.n_groups = len(GROUP_ORDER)
         self.n_cycles = n_cycles
         self.step_fraction = step_fraction
+        self.precomputed = precomputed
         super().__init__(fmu_path=fmu_path,device=device, **kwargs)
 
 
@@ -135,6 +136,19 @@ class CropSimEnv(FMUEnv):
         # print(f"action {action}")
         return new_state, action, True
     
+    def state2action_key(self, state):
+        """Convert state's action history to cache key string."""
+        modes_per_group = [
+            list(PERTURBATION_SCHEME[group].keys())
+            for group in GROUP_ORDER
+        ]
+        parts = []
+        for group_idx, mode_list in enumerate(modes_per_group, start=1):
+            _, _, perturb_id = state[group_idx]  # however your state encodes this
+            
+            parts.append(self.id2pert[perturb_id])
+        return "|".join(parts)
+
     def states2policy(
         self, states: Union[List, TensorType["batch", "state_dim"]]
     ) -> TensorType["batch", "policy_input_dim"]:
@@ -166,15 +180,29 @@ class CropSimEnv(FMUEnv):
         
         [t, N_fruit, C_fruit, Cum_DLI, Cum_T]
         """
-
         out = []
         for batch in states:
-            config = self._build_config(batch)
-            parameters = [0.0] * len(BASELINE_PARAMETERS.keys())
-            for i, k in enumerate(sorted(BASELINE_PARAMETERS)):
-                parameters[i] = config.get(k, INITIAL_CONDITIONS.get(k, BASELINE_PARAMETERS[k]))
-            out.append(parameters)
+            if self.precomputed:
+                out.append(self.state2action_key(batch))
+            else:
+                config = self._build_config(batch)
+                parameters = [0.0] * len(BASELINE_PARAMETERS.keys())
+                for i, k in enumerate(sorted(BASELINE_PARAMETERS)):
+                    parameters[i] = config.get(k, INITIAL_CONDITIONS.get(k, BASELINE_PARAMETERS[k]))
+                out.append(parameters)
         return out
+    
+    # def state2action_key(self, state):
+    #     """Convert state's action history to cache key string."""
+    #     modes_per_group = [
+    #         list(PERTURBATION_SCHEME[group].keys())
+    #         for group in GROUP_ORDER
+    #     ]
+    #     parts = []
+    #     for group_idx, mode_list in enumerate(modes_per_group):
+    #         mode_idx = state[group_idx]  # however your state encodes this
+    #         parts.append(mode_list[mode_idx])
+    #     return "|".join(parts)
     
     # see base code for doc
     # TODO: Add cycles
