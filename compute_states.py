@@ -47,8 +47,9 @@ def generate_all_terminal_states(step_fraction, start_from="midpoint"):
 def export_results(terminal_states, losses, beta, path):
     output = {}
     for combo, params in terminal_states.items():
+        breakpoint()
         L = losses[combo]
-        output[str(combo)] = {  # JSON keys must be strings
+        output[combo] = {
             "params": {k: float(v) for k, v in params.items()},
             "loss": float(L),
             "reward": float(np.exp(-beta * L)),
@@ -64,8 +65,6 @@ def export_results(terminal_states, losses, beta, path):
 
 
 if __name__ == "__main__":
-    import multiprocessing
-    multiprocessing.set_start_method("spawn", force=True)
     os.environ["OPENBLAS_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
     os.environ["OMP_NUM_THREADS"] = "1"
