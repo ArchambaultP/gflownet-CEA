@@ -63,62 +63,42 @@ def export_results(terminal_states, losses, beta, path):
     print(f"  States with reward > 0.5: {sum(1 for r in rewards if r > 0.5)}")
 
 
-# if __name__ == "__main__":
-#     os.environ["OPENBLAS_NUM_THREADS"] = "1"
-#     os.environ["MKL_NUM_THREADS"] = "1"
-#     os.environ["OMP_NUM_THREADS"] = "1"
-
-#     FMU_PATH = "fmu/FMU/tomato.fmu"
-#     TEAM_IDS = [
-#         "Reference",
-#         "Digilog",
-#         "IUACAAS",
-#         "Automatoes",
-#         "TheAutomators",
-#         "AICU",
-#     ]
-
-#     cores = min(len(os.sched_getaffinity(0)), 48)
-
-#     for sf in [0.10, 0.15, 0.30]:
-#         print(f"\n=== step_fraction = {sf} ===")
-
-#         states = generate_all_terminal_states(step_fraction=sf)
-
-#         print(f"  Generated {len(states):,} terminal states")
-
-#         losses = evaluate_all(
-#             states, FMU_PATH, TEAM_IDS,
-#             data_dir=DATA_DIR, 
-#             n_workers=cores, 
-#             verbose=True,
-#             timeout=600,
-#         )
-#         print(f"  {len(losses)}/{len(states)} evaluations completed")
-
-#         all_losses = list(losses.values())
-#         L_median = np.median(all_losses)
-#         beta = 5.65881 / L_median
-#         print(f"  Median loss: {L_median:.4f}, beta: {beta:.4f}")
-
-#         export_results(states, losses, beta, f"reward_table_sf{sf}.json")
-
 if __name__ == "__main__":
-    sf = 0.15
-    states = generate_all_terminal_states(step_fraction=sf)
-    print(f"Generated {len(states)} terminal states")
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["OMP_NUM_THREADS"] = "1"
 
-    # Fake losses: random values in a realistic-ish range
-    rng = np.random.default_rng(42)
-    losses = {combo: rng.uniform(0.5, 5.0) for combo in states}
+    FMU_PATH = "fmu/FMU/tomato.fmu"
+    TEAM_IDS = [
+        "Reference",
+        "Digilog",
+        "IUACAAS",
+        "Automatoes",
+        "TheAutomators",
+        "AICU",
+    ]
 
-    L_median = np.median(list(losses.values()))
-    beta = 5.65881 / L_median
+    cores = min(len(os.sched_getaffinity(0)), 48)
 
-    out_path = f"reward_table_sf{sf}.json"
-    export_results(states, losses, beta, out_path)
+    for sf in [0.10, 0.15, 0.30]:
+        print(f"\n=== step_fraction = {sf} ===")
 
-    # Quick verification: read it back
-    with open(out_path) as f:
-        data = json.load(f)
-    print(f"\n  Verified: read back {len(data)} entries from {out_path}")
+        states = generate_all_terminal_states(step_fraction=sf)
+
+        print(f"  Generated {len(states):,} terminal states")
+
+        losses = evaluate_all(
+            states, FMU_PATH, TEAM_IDS,
+            data_dir=DATA_DIR, 
+            n_workers=cores, 
+            verbose=True,
+            timeout=600,
+        )
+        print(f"  {len(losses)}/{len(states)} evaluations completed")
+
+        all_losses = list(losses.values())
+        L_median = np.median(all_losses)
+        beta = 5.65881 / L_median
+        print(f"  Median loss: {L_median:.4f}, beta: {beta:.4f}")
+
+        export_results(states, losses, beta, f"reward_table_sf{sf}.json")
