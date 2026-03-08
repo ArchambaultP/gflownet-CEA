@@ -1,44 +1,40 @@
 _target_: gflownet.gflownet.GFlowNetAgent
-# Random seeds
-seed: 0
-# Optimizer
+
+seed: ${seed}
+
 optimizer:
-  # Learning rates
-  lr: 0.0001
-  lr_decay_period: 1000000
+  # Learning rate — sweep over [1e-4, 5e-4, 1e-3]
+  lr: 5e-4
+  lr_decay_period: 10000
   lr_decay_gamma: 0.5
   method: adam
-  # Optimizer: adam, sgd
   adam_beta1: 0.9
   adam_beta2: 0.999
-  # Momentum for SGD
   sgd_momentum: 0.9
-  # Number of trajectories of each kind
+  z_dim: 16
+  lr_z_mult: 100
+
   batch_size:
-    # Forward on-policy (possibly tempered and/or with random actions)
-    forward: 1
-    # Backward from training set
+    # With cached rewards (precomputed directory), larger batches are free
+    forward: 64
     backward_dataset: 0
-    # Backward from replay buffer
-    backward_replay: 0
-  # Train to sample ratio
+    # Replay buffer helps DB loss see diverse transitions
+    backward_replay: 16
+
   train_to_sample_ratio: 1
-  # Number of training iterations
-  n_train_steps: 1000
-  # From original implementation
+  # 20k steps — with cached rewards this runs in minutes
+  n_train_steps: 20000
   bootstrap_tau: 0.0
-  clip_grad_norm: 0.0
-# State flow modelling
+  clip_grad_norm: 1.0
+
 state_flow: null
-# Force zero probability of sampling invalid actions
 mask_invalid_actions: True
-# Temperature for the logits /= temperature_logits
 temperature_logits: 1.0
-# Percentage of random actions
-random_action_prob: 0.0
-# Replay buffer
+
+# 10% random actions for exploration — helps avoid mode collapse
+random_action_prob: 0.1
+
 replay_sampling: permutation
-# Train data set backward sampling
 train_sampling: permutation
 use_context: False
 garbage_collection_period: 0

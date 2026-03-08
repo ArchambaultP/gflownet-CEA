@@ -62,7 +62,7 @@ class Logger:
         self.do = do
         self.do.times = self.do.times and self.do.online
         slurm_job_id = os.environ.get("SLURM_JOB_ID")
-
+        self.step = 1
         # Determine run name
         if run_name is None:
             run_name = ""
@@ -367,8 +367,9 @@ class Logger:
     def log_time(self, times: dict, use_context: bool):
         if self.do.times:
             times = {"time_{}".format(k): v for k, v in times.items()}
-            self.log_metrics(times, use_context=use_context)
-
+            self.log_metrics(times, step=self.step, use_context=use_context)
+            self.step += 1
+            
     def end(self):
         if not self.do.online:
             return

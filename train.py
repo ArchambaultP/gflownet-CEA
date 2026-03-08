@@ -11,7 +11,7 @@ from pathlib import Path
 import hydra
 import pandas as pd
 from omegaconf import open_dict
-
+import wandb
 from gflownet.utils.common import gflownet_from_config
 
 
@@ -31,9 +31,16 @@ def main(config):
     # Set other random seeds
     set_seeds(config.seed)
 
+
+
     # Initialize a GFlowNet agent from the configuration file
     gflownet = gflownet_from_config(config)
-
+    import wandb
+    if wandb.run is not None:
+        wandb.run.config.update({
+            "step_fraction": os.environ.get("STEP_FRACTION", "unknown"),
+            "reward_cache": os.environ.get("REWARD_CACHE_PATH", "none"),
+        })
     # Train GFlowNet
     gflownet.train()
 
