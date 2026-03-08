@@ -88,6 +88,7 @@ def run_parallel(args_by_team, fmu_path, timeout=15, verbose=False,
                      "OPENBLAS_NUM_THREADS": "1",
                      "MKL_NUM_THREADS": "1",
                      "OMP_NUM_THREADS": "1",
+                     "PYTHONPATH": os.pathsep.join(sys.path),
                      "TMPDIR": tmp_dir},
             )
             procs[t] = (p, result_file)

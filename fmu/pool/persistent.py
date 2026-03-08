@@ -125,7 +125,8 @@ class PersistentFMUPool:
             env={**os.environ,
                  "OPENBLAS_NUM_THREADS": "1",
                  "MKL_NUM_THREADS": "1",
-                 "OMP_NUM_THREADS": "1"},
+                 "OMP_NUM_THREADS": "1",
+                 "PYTHONPATH": os.pathsep.join(sys.path),},
             cwd=os.getcwd(),
         )
         try:
