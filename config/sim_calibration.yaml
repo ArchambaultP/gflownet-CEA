@@ -1,5 +1,4 @@
 defaults:
-  - _self_
   - env: simenv
   - gflownet: trajectorybalance
   - loss: trajectorybalance
@@ -9,6 +8,7 @@ defaults:
   - user: default
   - evaluator: base
   - buffer: base
+  - _self_
 
 # Device
 device: cuda
@@ -16,7 +16,6 @@ device: cuda
 float_precision: 32
 # Number of objects to sample at the end of training
 n_samples: 100
-n_train_steps: 10000
 # Random seeds
 seed: 0
 random_action_prob: 0.1 # this should be higher for 2cycle
@@ -29,7 +28,10 @@ env:
   precomputed: False
 
 gflownet:
-  n_train_steps: 10000
+  optimizer:
+    n_train_steps: 10000
+
+
 
 # Hydra config
 hydra:
