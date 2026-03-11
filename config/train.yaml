@@ -5,7 +5,7 @@ defaults:
   - loss: trajectorybalance
   - policy: mlp_${gflownet}
   - proxy: uniform
-  - logger: wandb
+  - logger: base
   - user: default
   - evaluator: base
   - buffer: base
