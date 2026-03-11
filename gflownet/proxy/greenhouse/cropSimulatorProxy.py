@@ -114,7 +114,6 @@ class CropSimulatorProxy(Proxy):
         # # breakpoint()
         
         team_losses = self.pool.evaluate(full_config)
-        breakpoint()
         if not team_losses:
             return 1e6
 
