@@ -7,11 +7,18 @@ to avoid reset() corruption.
 import os
 import subprocess
 import sys
+import threading
 from fmu.pool.protocol import send, recv_timeout
 
 
 _PERSISTENT_WORKER = """
-import sys, os, pickle, struct
+import sys, os, pickle, struct, traceback, signal, select, time
+
+# ── Protect the protocol pipe from FMU C-level stdout writes ──
+_PROTO_FD = os.dup(sys.stdout.fileno())   # copy of real stdout
+os.dup2(sys.stderr.fileno(), 1)           # fd 1 now → stderr
+_proto_out = os.fdopen(_PROTO_FD, 'wb', buffering=0)
+
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -22,20 +29,31 @@ data_dir = sys.argv[3]
 step_size = float(sys.argv[4])
 max_uses = int(sys.argv[5])
 
-from fmu.tomato_controller import TomatoController
+# NOTE: We intentionally do NOT import TomatoController here.
+# It loads native .so/.dll code with global state that corrupts
+# across fork(). Only the child process imports it (post-fork).
 from gflownet.envs.greenhouse.constants import BASELINE_PARAMETERS, INITIAL_CONDITIONS
 from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
 
+# ── Expensive one-time setup (survives child segfaults) ──
 team_data = CropSimulatorProxy.get_team_obs_dataset(data_dir, team)
 input_trace = CropSimulatorProxy.compute_trace(
     CropSimulatorProxy.get_team_control_dataset(data_dir, team), delta='30min')
 setpoints = (team_data.index - team_data.index.min())[1:].total_seconds().tolist()
 
+# Pre-extract plain Python lists for the child (no pandas after fork)
+_team_DM = team_data["DM_harvest_obs"].tolist()
+_team_N  = team_data["N_harvest_per_m2"].tolist()
+
+# Pre-pickle heavy objects so the child can deserialize a clean copy
+# instead of relying on fork'd pandas internals
+_input_trace_bytes = pickle.dumps(input_trace)
+
 def _send(obj):
     data = pickle.dumps(obj)
-    sys.stdout.buffer.write(struct.pack('<I', len(data)))
-    sys.stdout.buffer.write(data)
-    sys.stdout.buffer.flush()
+    _proto_out.write(struct.pack('<I', len(data)))
+    _proto_out.write(data)
+    _proto_out.flush()
 
 def _recv():
     raw = sys.stdin.buffer.read(4)
@@ -44,13 +62,133 @@ def _recv():
     size = struct.unpack('<I', raw)[0]
     return pickle.loads(sys.stdin.buffer.read(size))
 
-def make_controller():
-    return TomatoController(
-        fmu_path, start_time=0, stop_time=86400.0 * 200,
-        step_size=step_size, logger=None)
+def _pipe_read_all(fd, size):
+    \"\"\"Read exactly `size` bytes from a file descriptor.\"\"\"
+    chunks = []
+    remaining = size
+    while remaining > 0:
+        chunk = os.read(fd, remaining)
+        if not chunk:
+            raise EOFError("child pipe closed prematurely")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b''.join(chunks)
 
-controller = make_controller()
-use_count = 0
+def _as_scalar(v):
+    \"\"\"Extract a float from FMU output (may be list, array, or scalar).\"\"\"
+    if isinstance(v, (list, tuple)):
+        return float(v[-1]) if v else 0.0
+    if hasattr(v, '__len__'):
+        # numpy array or similar
+        return float(v[-1]) if len(v) > 0 else 0.0
+    return float(v)
+
+def run_in_fork(config, timeout=60):
+    \"\"\"Fork a child to run simulate(). Parent survives segfaults.
+
+    The child imports TomatoController fresh (no inherited .so state)
+    and deserializes input_trace from bytes (no shared pandas memory).
+    \"\"\"
+    r_fd, w_fd = os.pipe()
+    pid = os.fork()
+
+    if pid == 0:
+        # ── CHILD: run simulate, write result, _exit ──
+        os.close(r_fd)
+        try:
+            # Import FMU only in the child — the native library is loaded
+            # fresh here, with no inherited global state from the parent.
+            from fmu.tomato_controller import TomatoController
+
+            # Deserialize a clean copy of input_trace
+            child_input_trace = pickle.loads(_input_trace_bytes)
+
+            controller = TomatoController(
+                fmu_path, start_time=0, stop_time=86400.0 * 200,
+                step_size=step_size, logger=None)
+            sim_out = controller.simulate(
+                child_input_trace, setpoints, init_conds=config)
+
+            errors = []
+            for idx, (_, output) in enumerate(sim_out):
+                y_DM = _team_DM[idx]
+                y_N  = _team_N[idx]
+                y_hat_DM = _as_scalar(output["C_harvest"])
+                y_hat_N  = _as_scalar(output["N_harvest"])
+                if y_DM > 0:
+                    errors.append(((y_hat_DM - y_DM) / y_DM) ** 2)
+                if y_N > 0:
+                    errors.append(((y_hat_N - y_N) / y_N) ** 2)
+
+            result = ("OK", errors)
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
+            sys.stderr.flush()
+            result = ("ERROR", f"{type(e).__name__}: {e}")
+
+        try:
+            data = pickle.dumps(result)
+            os.write(w_fd, struct.pack('<I', len(data)))
+            os.write(w_fd, data)
+        except Exception:
+            pass
+        os.close(w_fd)
+        os._exit(0)
+
+    else:
+        # ── PARENT: wait for child, read result from pipe ──
+        os.close(w_fd)
+        try:
+            deadline = time.monotonic() + timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    os.kill(pid, signal.SIGKILL)
+                    os.waitpid(pid, 0)
+                    os.close(r_fd)
+                    return ("ERROR", "child timed out")
+                ready, _, _ = select.select([r_fd], [], [], min(remaining, 1.0))
+                if ready:
+                    break
+                # Check if child already exited (segfault etc.)
+                wpid, wstatus = os.waitpid(pid, os.WNOHANG)
+                if wpid != 0:
+                    os.close(r_fd)
+                    if os.WIFSIGNALED(wstatus):
+                        sig = os.WTERMSIG(wstatus)
+                        try:
+                            sig_name = signal.Signals(sig).name
+                        except (ValueError, AttributeError):
+                            sig_name = f"signal {sig}"
+                        return ("ERROR", f"child killed by {sig_name}")
+                    return ("ERROR", f"child exited with code {os.WEXITSTATUS(wstatus)}")
+
+            # Read the result
+            raw_len = _pipe_read_all(r_fd, 4)
+            size = struct.unpack('<I', raw_len)[0]
+            raw_data = _pipe_read_all(r_fd, size)
+            os.close(r_fd)
+
+            # Reap the child
+            os.waitpid(pid, 0)
+
+            return pickle.loads(raw_data)
+
+        except Exception as e:
+            # Ensure child is reaped
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            try:
+                os.waitpid(pid, 0)
+            except ChildProcessError:
+                pass
+            try:
+                os.close(r_fd)
+            except OSError:
+                pass
+            return ("ERROR", f"parent error: {type(e).__name__}: {e}")
 
 _send("READY")
 
@@ -64,32 +202,20 @@ while True:
         break
 
     config = msg
-
-    if use_count >= max_uses:
-        controller = make_controller()
-        use_count = 0
-
-    try:
-        sim_out = controller.simulate(input_trace, setpoints, init_conds=config)
-        use_count += 1
-
-        errors = []
-        for idx, (_, output) in enumerate(sim_out):
-            y_DM = team_data["DM_harvest_obs"].iloc[idx]
-            y_N = team_data["N_harvest_per_m2"].iloc[idx]
-            y_hat_DM = output["C_harvest"]
-            y_hat_N = output["N_harvest"]
-            if y_DM > 0:
-                errors.append(((y_hat_DM - y_DM) / y_DM) ** 2)
-            if y_N > 0:
-                errors.append(((y_hat_N - y_N) / y_N) ** 2)
-
-        _send(("OK", errors))
-    except Exception as e:
-        controller = make_controller()
-        use_count = 0
-        _send(("ERROR", str(e)))
+    status, payload = run_in_fork(config, timeout=60)
+    _send((status, payload))
 """
+
+
+def _drain_stderr(pipe, team, lines_buf):
+    """Background thread to continuously read stderr from a worker."""
+    try:
+        for line in iter(pipe.readline, b''):
+            decoded = line.decode("utf-8", errors="replace").rstrip()
+            if decoded:
+                lines_buf.append(decoded)
+    except Exception:
+        pass
 
 
 class PersistentFMUPool:
@@ -101,20 +227,27 @@ class PersistentFMUPool:
         data_dir: path to greenhouse data
         step_size: FMU solver step size
         max_uses: reinstantiate FMU after this many simulate() calls
+        max_restarts: max consecutive restarts before giving up on a team
     """
 
-    def __init__(self, teams, fmu_path, data_dir, step_size=120.0, max_uses=1):
+    def __init__(self, teams, fmu_path, data_dir, step_size=120.0, max_uses=1,
+                 max_restarts=3):
         self.teams = teams
         self.fmu_path = fmu_path
         self.data_dir = data_dir
         self.step_size = step_size
         self.max_uses = max_uses
+        self.max_restarts = max_restarts
         self.workers = {}
+        self._stderr_bufs = {}   # team -> list of recent stderr lines
+        self._stderr_threads = {}
+        self._restart_counts = {t: 0 for t in teams}
 
         for t in teams:
             self._start_worker(t)
 
     def _start_worker(self, team):
+        self._stderr_bufs[team] = []
         p = subprocess.Popen(
             [sys.executable, "-c", _PERSISTENT_WORKER,
              team, self.fmu_path, self.data_dir,
@@ -129,45 +262,99 @@ class PersistentFMUPool:
                  "PYTHONPATH": os.pathsep.join(sys.path),},
             cwd=os.getcwd(),
         )
+        # Start a background thread to drain stderr so it doesn't block
+        buf = self._stderr_bufs[team]
+        t = threading.Thread(target=_drain_stderr, args=(p.stderr, team, buf),
+                             daemon=True)
+        t.start()
+        self._stderr_threads[team] = t
+
         try:
             ready = recv_timeout(p.stdout, timeout=30)
             assert ready == "READY"
         except Exception:
-            stderr = p.stderr.read().decode()
+            # Give the stderr thread a moment to collect output
+            t.join(timeout=2)
+            stderr_text = "\n".join(buf[-50:])  # last 50 lines
             p.kill()
             p.wait()
-            raise RuntimeError(f"Worker {team} failed to start: {stderr}")
+            raise RuntimeError(
+                f"Worker {team} failed to start.\n--- stderr ---\n{stderr_text}")
         self.workers[team] = p
+        self._restart_counts[team] = 0
+        print(f"Worker {team} started (pid={p.pid})")
 
     def _restart_worker(self, team):
+        """Kill and restart a worker. Returns True if successful."""
         p = self.workers.get(team)
         if p:
             try:
                 p.kill()
-                p.wait()
+                p.wait(timeout=5)
             except Exception:
                 pass
-        print(f"Restarting worker for team {team}")
-        self._start_worker(team)
 
-    def evaluate(self, config, timeout=15):
+        self._restart_counts[team] = self._restart_counts.get(team, 0) + 1
+        if self._restart_counts[team] > self.max_restarts:
+            # Dump stderr to help debug
+            stderr_lines = self._stderr_bufs.get(team, [])
+            print(f"Worker {team} exceeded {self.max_restarts} restarts, "
+                  f"giving up. Last stderr:\n" +
+                  "\n".join(stderr_lines[-30:]))
+            return False
+
+        print(f"Restarting worker {team} "
+              f"(attempt {self._restart_counts[team]}/{self.max_restarts})")
+        try:
+            self._start_worker(team)
+            return True
+        except RuntimeError as e:
+            print(f"Failed to restart worker {team}: {e}")
+            return False
+
+    def _get_worker_stderr(self, team):
+        """Return recent stderr lines for a team's worker."""
+        return "\n".join(self._stderr_bufs.get(team, [])[-20:])
+
+    def evaluate(self, config, timeout=90):
         """Send config to all teams, collect per-team errors.
+
+        Dead workers are automatically restarted (up to max_restarts times).
         Returns list of error lists, one per team that succeeded.
-        Skips any team whose worker is dead or fails — no retries.
         """
-        # Send to all live workers, skip dead ones
+        # Phase 1: Ensure all workers are alive, restart dead ones
+        for t in self.teams:
+            p = self.workers.get(t)
+            if p is None or p.poll() is not None:
+                rc = p.returncode if p else None
+                # Negative return code = killed by signal (e.g. -9=OOM, -11=segfault)
+                if rc is not None and rc < 0:
+                    import signal as _sig
+                    try:
+                        sig_name = _sig.Signals(-rc).name
+                    except (ValueError, AttributeError):
+                        sig_name = f"signal {-rc}"
+                    print(f"Worker {t} killed by {sig_name} (rc={rc})")
+                elif rc is not None:
+                    print(f"Worker {t} exited with code {rc}")
+                stderr_text = self._get_worker_stderr(t)
+                if stderr_text:
+                    print(f"Worker {t} stderr:\n{stderr_text}")
+                self._restart_worker(t)
+
+        # Phase 2: Send config to all live workers
         live_teams = []
-        for t, p in self.workers.items():
-            if p.poll() is not None:
-                print(f"Worker {t} already dead, skipping")
-                continue
+        for t in self.teams:
+            p = self.workers.get(t)
+            if p is None or p.poll() is not None:
+                continue  # restart failed, skip
             try:
                 send(p.stdin, config)
                 live_teams.append(t)
             except (BrokenPipeError, OSError):
-                print(f"Worker {t} pipe broken, skipping")
+                print(f"Worker {t} pipe broken on send, will restart next call")
 
-        # Collect results only from teams we successfully sent to
+        # Phase 3: Collect results
         team_losses = []
         for t in live_teams:
             p = self.workers[t]
@@ -175,13 +362,19 @@ class PersistentFMUPool:
                 status, payload = recv_timeout(p.stdout, timeout=timeout)
                 if status == "OK" and payload:
                     team_losses.append(payload)
+                    print(f"Worker {t} computed loss: {payload}")
+                    # Successful call — reset restart counter
+                    self._restart_counts[t] = 0
                 elif status == "ERROR":
                     print(f"FMU error for team {t}: {payload}")
             except TimeoutError:
-                print(f"Worker {t} timed out, killing")
+                print(f"Worker {t} timed out ({timeout}s), killing")
                 p.kill()
+                p.wait()
             except EOFError:
-                print(f"Worker {t} died mid-response")
+                rc = p.returncode if p.poll() is not None else "still running?"
+                stderr_text = self._get_worker_stderr(t)
+                print(f"Worker {t} died mid-response (rc={rc}). stderr:\n{stderr_text}")
 
         return team_losses
 
@@ -191,5 +384,8 @@ class PersistentFMUPool:
                 send(p.stdin, "STOP")
                 p.wait(timeout=5)
             except Exception:
-                p.kill()
-                p.wait()
+                try:
+                    p.kill()
+                    p.wait()
+                except Exception:
+                    pass
