@@ -28,7 +28,7 @@ class CropSimEnv(FMUEnv):
 
      # --- Perturbation application ---
      # TODO: Change perturbation actions
-    def _apply_perturbation(self, group_name, perturb_name, values = None):    
+    def _apply_perturbation(self, step_fraction, group_name, perturb_name, values = None):    
         """
         Takes in a group name and a perturbation name, then returns the subset
         of modified parameters belonging to the group
@@ -49,20 +49,25 @@ class CropSimEnv(FMUEnv):
                 exit(0)
                 print('Key not in perturbation scheme....')
             
-            val = np.clip(val + direction * self.step_fraction * (hi-lo), lo, hi)
+            val = np.clip(val + direction * step_fraction * (hi-lo), lo, hi)
             values[p] = val
         
         return values
     
-    def _build_parameter_set(self, group_id, perturb_id, values = None):
+    def _build_parameter_set(self, group_id, perturb_id, step_fraction=None,values = None):
+        
+        if step_fraction is None:
+            step_fraction = self.step_fraction
+        
         group = self.id2group[group_id]
         perturb = self.id2pert[perturb_id]
-        return self._apply_perturbation(group, perturb, values)
+        return self._apply_perturbation(step_fraction, group, perturb, values)
     
     def _build_config(self, states):
         combined_params = {}
-        for (_, group_id, perturb_id) in states[1:]:
-            combined_params.update(self._build_parameter_set(group_id, perturb_id, values=combined_params))
+        for (cycle, group_id, perturb_id) in states[1:]:
+            step_fraction = self._get_step_fraction(cycle)
+            combined_params.update(self._build_parameter_set(group_id, perturb_id, step_fraction=step_fraction,values=combined_params))
         return combined_params
     
     def _build_action_space(self):
@@ -108,7 +113,7 @@ class CropSimEnv(FMUEnv):
 
         do_step, state, action = self._pre_step(action, skip_mask_check)
 
-        print(f"action {action}")
+        # print(f"action {action}")
         # if action invalid
         if not do_step:
             return state, action, False        
@@ -116,7 +121,6 @@ class CropSimEnv(FMUEnv):
         if state == [()]:
             new_state = state + [(1, 0, action)]
             self.state = new_state
-            print(new_state)
             return new_state, action, True
         
         last_cycle, last_group_id, _ = state[-1]
@@ -125,10 +129,8 @@ class CropSimEnv(FMUEnv):
         if group_id  == self.n_groups:
             last_cycle += 1
             group_id = 0
-            self.step_fraction = self.step_fraction * self.decay_factor
 
         new_state = state + [(last_cycle, group_id, action)]
-        print(new_state)
         self.state = new_state
 
         if len(new_state[1:]) == self.n_groups * self.n_cycles: # if our object is finally constructed
@@ -144,6 +146,7 @@ class CropSimEnv(FMUEnv):
             for group in GROUP_ORDER
         ]
         parts = []
+
         for group_idx, mode_list in enumerate(modes_per_group, start=1):
             _, _, perturb_id = state[group_idx]  # however your state encodes this
             
@@ -156,22 +159,26 @@ class CropSimEnv(FMUEnv):
         """
         policy vector contains:
 
-        [0, ..., n_group) -> group bitmask
-        [n_group] -> completion flag, true if bitmask all true
-        (n_group, n_parameters] -> parameter values. 0 if not complete
+        [0]: step number
+        [1]: step_fraction @ cycle
+        [2..n_operations]: perturbation ids
+        [n_operations..n_params]: parameter set
         """
         out = []
         for state in states: # states is a list of batches containing actual states
-            vec = [-1.0] * (2 + self.n_groups * self.n_cycles) # adding 1 for step index, 1 for step_fraction
+            n_operations = self.n_groups * self.n_cycles
+            vec = [-1.0] * (2 + n_operations + self.n_params) # adding 1 for step index, 1 for step_fraction
             step = 1
             for i, s in enumerate(state, start=1):
                 if s == ():
                     continue
-                _, _, pert_id = s
+                cycle, _, pert_id = s
                 vec[i] = pert_id
                 step += 1
             vec[1] = self.step_fraction
             vec[0] = step
+            param_set = self.build_config(state, normalize=True)
+            vec[2+n_operations:] = param_set
             out.append(vec)
         return tfloat(out, float_type=float32, device=self.device)
     
@@ -183,15 +190,27 @@ class CropSimEnv(FMUEnv):
         """
         out = []
         for batch in states:
-            if self.precomputed:
-                out.append(self.state2action_key(batch))
-            else:
-                config = self._build_config(batch)
-                parameters = [0.0] * len(BASELINE_PARAMETERS.keys())
-                for i, k in enumerate(sorted(BASELINE_PARAMETERS)):
-                    parameters[i] = config.get(k, INITIAL_CONDITIONS.get(k, BASELINE_PARAMETERS[k]))
-                out.append(parameters)
+                if self.precomputed:
+                    out.append(self.state2action_key(batch))
+                else:
+                    out.append(self.build_config(batch))
         return out
+    
+    def build_config(self, state, normalize=False):
+
+        config = self._build_config(state)
+        parameters = [0.0] * len(BASELINE_PARAMETERS.keys())
+        for i, k in enumerate(sorted(BASELINE_PARAMETERS)):
+            parameters[i] = config.get(k, INITIAL_CONDITIONS.get(k, BASELINE_PARAMETERS[k]))
+        
+        if normalize:
+            for i,k in enumerate(sorted(BASELINE_PARAMETERS)):
+                lo, hi = PARAMETER_BOUNDS.get(k, (0, 0))
+                if lo == hi:
+                    parameters[i] = 0.5 #no bounds -> parameter stays fixed
+                else:
+                    parameters[i] = (parameters[i] - lo) / (hi-lo)
+        return parameters
     
     # def state2action_key(self, state):
     #     """Convert state's action history to cache key string."""
@@ -204,13 +223,15 @@ class CropSimEnv(FMUEnv):
     #         mode_idx = state[group_idx]  # however your state encodes this
     #         parts.append(mode_list[mode_idx])
     #     return "|".join(parts)
+
+    def _get_step_fraction(self, cycle=1):
+        return self.step_fraction * self.decay_factor ** (cycle-1)
     
     # see base code for doc
-    # TODO: Add cycles
     def _get_max_trajectory_length(self):
         return len(GROUP_ORDER)*self.n_cycles +1
-    
-    
+
+
     def get_mask_invalid_actions_forward(self,
         state: Optional[List[Tuple[str, dict]]] = None,
         done: Optional[bool] = None,

@@ -6,7 +6,7 @@ import time
 import numpy as np
 import pandas as pd
 import torch
-
+from fmu.tomato_controller import TomatoController
 from gflownet.proxy.base import Proxy
 from gflownet.envs.greenhouse.constants import (
     BASELINE_PARAMETERS, PARAMETER_BOUNDS, INITIAL_CONDITIONS,
@@ -18,7 +18,7 @@ from data.greenhouse.secondEdition.extract import (
 
 class CropSimulatorProxy(Proxy):
 
-    def __init__(self, reward_cache_path=None, beta=None, precomputed=False, **kwargs):
+    def __init__(self, reward_cache_path=None, beta=None, **kwargs):
         super().__init__(**kwargs)
 
         self.teams = [
@@ -29,8 +29,8 @@ class CropSimulatorProxy(Proxy):
         self.fmu_path = "fmu/FMU/tomato.fmu"
         self.step_size = 120.0
         self.parameter_names = sorted(PARAMETER_BOUNDS.keys())
-        self.beta = beta if beta is not None else 5.65881
-        self.precomputed = precomputed
+        self.beta = beta if beta is not None else 95
+
         # Load precomputed cache if available
         self.reward_cache = {}
         self.cache_hits = 0
@@ -38,8 +38,10 @@ class CropSimulatorProxy(Proxy):
 
         if reward_cache_path and os.path.exists(reward_cache_path):
             self._load_cache(reward_cache_path)
+            self.precomputed = True
             print(f"Loaded {len(self.reward_cache)} cached evaluations from {reward_cache_path}")
         else:
+            self.precomputed = False
             print("No reward cache found — will use live FMU evaluation")
 
         # Only initialize FMU infrastructure if we might need it
@@ -90,8 +92,29 @@ class CropSimulatorProxy(Proxy):
             self._init_fmu()
 
         full_config = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **config}
-        team_losses = self.pool.evaluate(full_config)
+        
+        # def log_callback(instance_environment, instance_name, status, category, message):
+        #     print(f"[FMU] {category}: {message}")
 
+        # tomato = TomatoController('fmu/FMU/tomato.fmu', 
+        #                             start_time=0, # inital simulation time (in seconds). should not change
+        #                             stop_time=86400.0 * 200, # Final simulation time (in seconds).
+        #                             step_size=120.0, #numerical solver step size (in seconds)
+        #                             logger=log_callback)
+        
+        # test_inp = self.team_input['Reference']
+        # test_cond = full_config
+        # # test_setpoint = [86400*150]
+
+        # test_out = tomato.simulate(test_inp, test_setpoint, init_conds=test_cond)
+        # # inputs = [(0, {"CO2_Air":400.0, "PAR_gh":500.0, "TCan":20.0, "TCan24":20.0})]
+        # # setpoints = [86400.0 * 30]
+
+        # # out = tomato.simulate(inputs, setpoints, None)
+        # # breakpoint()
+        
+        team_losses = self.pool.evaluate(full_config)
+        breakpoint()
         if not team_losses:
             return 1e6
 

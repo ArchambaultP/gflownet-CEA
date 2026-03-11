@@ -11,7 +11,6 @@ from gflownet.envs.greenhouse.constants import (
     BASELINE_PARAMETERS, INITIAL_CONDITIONS, PARAMETER_BOUNDS
 )
 
-from fmu.fmu_pool import run_parallel
 # import pandas as pd
 # import datetime
 # from data.greenhouse.secondEdition.extract import load_data
@@ -46,9 +45,11 @@ def main():
                                         logger=log_callback)
 
     inputs = [(0, {"CO2_Air":400.0, "PAR_gh":500.0, "TCan":20.0, "TCan24":20.0})]
-    setpoints = [86400.0 * 30]
+    setpoints = [86400.0 * 150]
 
     out = tomato.simulate(inputs, setpoints, None)
+
+    breakpoint()
     TEAM_IDS = [
         "Reference",
         "Digilog",
