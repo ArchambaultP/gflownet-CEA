@@ -9,7 +9,7 @@ import numpy as np
 
 class CropSimEnv(FMUEnv):
 
-    def __init__(self, n_cycles=1, step_fraction=0.2, fmu_path = 'fmu/FMU/tomato.fmu',device="CUDA", precomputed=False, **kwargs):
+    def __init__(self, n_cycles=1, step_fraction=0.2, decay_factor=0.5, fmu_path = 'fmu/FMU/tomato.fmu',device="CUDA", precomputed=False, **kwargs):
         self.source = [()]
         self.group2id = {g: i for i, g in enumerate(GROUP_ORDER)}
         self.id2group = {i: g for g, i in self.group2id.items()}
@@ -21,6 +21,7 @@ class CropSimEnv(FMUEnv):
         self.n_groups = len(GROUP_ORDER)
         self.n_cycles = n_cycles
         self.step_fraction = step_fraction
+        self.decay_factor = decay_factor
         self.precomputed = precomputed
         super().__init__(fmu_path=fmu_path,device=device, **kwargs)
 
@@ -113,7 +114,6 @@ class CropSimEnv(FMUEnv):
             return state, action, False        
 
         if state == [()]:
-
             new_state = state + [(1, 0, action)]
             self.state = new_state
             print(new_state)
@@ -125,6 +125,7 @@ class CropSimEnv(FMUEnv):
         if group_id  == self.n_groups:
             last_cycle += 1
             group_id = 0
+            self.step_fraction = self.step_fraction * self.decay_factor
 
         new_state = state + [(last_cycle, group_id, action)]
         print(new_state)
@@ -161,15 +162,15 @@ class CropSimEnv(FMUEnv):
         """
         out = []
         for state in states: # states is a list of batches containing actual states
-            vec = [-1.0] * (1 + self.n_groups * self.n_cycles) # adding 1 for step index
+            vec = [-1.0] * (2 + self.n_groups * self.n_cycles) # adding 1 for step index, 1 for step_fraction
             step = 1
-            for i, s in enumerate(state):
+            for i, s in enumerate(state, start=1):
                 if s == ():
                     continue
                 _, _, pert_id = s
                 vec[i] = pert_id
                 step += 1
-
+            vec[1] = self.step_fraction
             vec[0] = step
             out.append(vec)
         return tfloat(out, float_type=float32, device=self.device)

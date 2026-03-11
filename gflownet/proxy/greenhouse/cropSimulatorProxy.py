@@ -115,7 +115,12 @@ class CropSimulatorProxy(Proxy):
                     config[name] = float(batch[i])
                 loss = self._evaluate_live(config)
 
-            reward = np.exp(-self.beta * loss)
+
+            # we switch reward from exponential to power law
+            # beta is named that to simplify code
+            # it should be called alpha
+            reward = (1/loss) ** self.beta # -beta * loss
+            reward = np.clip(reward, min=1e-12)
             out.append(reward)
 
         return torch.tensor(out, dtype=self.float, device=self.device)

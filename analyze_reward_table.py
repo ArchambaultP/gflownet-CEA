@@ -22,7 +22,9 @@ def load_reward_table(path, beta):
         losses.append(entry["loss"])
 
     losses = np.array(losses)
-    rewards = np.exp(-beta * losses)
+#    rewards = np.exp(-beta * (losses - losses.min()))
+#    rewards = np.exp(-beta * losses)
+    rewards = (1/losses) ** beta
     Z = rewards.sum()
     probs = rewards / Z
 
@@ -54,8 +56,10 @@ def main():
     nonzero = probs[probs > 0]
     entropy = -np.sum(nonzero * np.log(nonzero))
     n_eff = np.exp(entropy)
+    delta_H = np.log(len(states)) - entropy
     print(f"Entropy:          {entropy:.4f}")
-    print(f"Effective modes:  {n_eff:.1f}")
+    print(f"Effective modes:  {n_eff:.1f} ({100*n_eff/len(states):.2f}% of state-space)") # this should be between 0.1 - 1% ideally
+    print(f"Entropy gap:      {delta_H:.4f}")
 
     # Top-k states
     print(f"\nTop {args.top_k} states:")

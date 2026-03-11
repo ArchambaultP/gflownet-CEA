@@ -11,6 +11,7 @@ _target_: gflownet.envs.greenhouse.sim_env.CropSimEnv
 
 
 precomputed: True
+decay_factor: 0.5
 
 # Buffer
 buffer:
