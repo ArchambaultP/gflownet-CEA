@@ -11,4 +11,3 @@ reward_cache_path: ${oc.env:REWARD_CACHE_PATH,null}
 # Inverse temperature for R(x) = exp(-beta * L(x))
 # Calibrate with calibrate_beta.py: beta = 4.6 / L_midpoint
 beta: 50
-precomputed: False

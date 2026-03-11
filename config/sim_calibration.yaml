@@ -5,7 +5,7 @@ defaults:
   - loss: trajectorybalance
   - policy: mlp_${gflownet}
   - proxy: cropSimulation
-  - logger: wandb
+  - logger: base
   - user: default
   - evaluator: base
   - buffer: base
@@ -16,9 +16,20 @@ device: cuda
 float_precision: 32
 # Number of objects to sample at the end of training
 n_samples: 100
+n_train_steps: 10000
 # Random seeds
 seed: 0
+random_action_prob: 0.1 # this should be higher for 2cycle
 
+optimizer:
+  forward: 64
+  backward_replay: 16
+
+env:
+  precomputed: False
+
+gflownet:
+  n_train_steps: 10000
 
 # Hydra config
 hydra:
