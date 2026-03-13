@@ -35,6 +35,9 @@ def main(config):
 
     # Initialize a GFlowNet agent from the configuration file
     gflownet = gflownet_from_config(config)
+
+    breakpoint()
+
     import wandb
     if wandb.run is not None:
         wandb.run.config.update({
@@ -67,6 +70,11 @@ def main(config):
     if len(gflownet.buffer.replay) > 0:
         print("\nReplay buffer:")
         print(gflownet.buffer.replay)
+
+    try:
+        gflownet.proxy.pool.shutdown()
+    except Exception:
+        pass
 
     # Close logger
     # TODO: make it gflownet.end() - perhaps there are other things to end
