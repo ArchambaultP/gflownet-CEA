@@ -35,9 +35,6 @@ def main(config):
 
     # Initialize a GFlowNet agent from the configuration file
     gflownet = gflownet_from_config(config)
-
-    breakpoint()
-
     import wandb
     if wandb.run is not None:
         wandb.run.config.update({
