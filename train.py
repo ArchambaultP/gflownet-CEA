@@ -35,6 +35,19 @@ def main(config):
 
     # Initialize a GFlowNet agent from the configuration file
     gflownet = gflownet_from_config(config)
+    _original_end = gflownet.logger.end
+
+    def _end_with_timeout():
+        import threading
+        # Force exit if wandb.finish() takes more than 60s
+        timer = threading.Timer(60.0, lambda: os._exit(0))
+        timer.daemon = True
+        timer.start()
+        _original_end()
+        timer.cancel()
+
+    gflownet.logger.end = _end_with_timeout
+
     import wandb
     if wandb.run is not None:
         wandb.run.config.update({
@@ -62,15 +75,19 @@ def main(config):
         df.to_csv(samples_dir / "gfn_samples.csv")
         dct = {"x": x_sampled, "energy": energies}
         pickle.dump(dct, open(samples_dir / "gfn_samples.pkl", "wb"))
+    
 
     # Print replay buffer
     if len(gflownet.buffer.replay) > 0:
         print("\nReplay buffer:")
         print(gflownet.buffer.replay)
-
+    
+    print("Shutting Down")
     try:
         gflownet.proxy.pool.shutdown()
-    except Exception:
+        print("Shutdown Pool")
+    except Exception as e:
+        print(f"Exception: {e}")
         pass
 
     # Close logger
