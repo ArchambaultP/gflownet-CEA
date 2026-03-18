@@ -1,0 +1,4 @@
+- seed=1
+- gflownet.optimizer.lr=1e-4
+- proxy.reward_cache_path=precomputed/reward_table_sf0.3.json
+- logger.project_name=gfn-crop-calibration

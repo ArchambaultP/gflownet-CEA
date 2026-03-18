@@ -1,0 +1,165 @@
+env:
+  _target_: gflownet.envs.greenhouse.sim_env.CropSimEnv
+  env_id: env
+  fixed_distr_params: null
+  random_distr_params: null
+  skip_mask_check: false
+  conditional: false
+  continuous: false
+  decay_factor: 0.5
+  buffer:
+    test:
+      type: uniform
+      'n': 1
+      seed: 0
+  policy:
+    forward:
+      type: mlp
+      n_hid: 256
+      n_layers: 3
+      checkpoint: forward
+    backward:
+      shared_weights: false
+      type: mlp
+      n_hid: 256
+      n_layers: 3
+      checkpoint: backward
+  evaluator:
+    first_it: false
+    period: 5
+    'n': 1
+    checkpoints_period: 5
+  id: simenv
+  precomputed: true
+gflownet:
+  _target_: gflownet.gflownet.GFlowNetAgent
+  seed: ${seed}
+  optimizer:
+    lr: 0.0001
+    lr_decay_period: 1000000
+    lr_decay_gamma: 0.5
+    method: adam
+    adam_beta1: 0.9
+    adam_beta2: 0.999
+    sgd_momentum: 0.9
+    z_dim: 16
+    lr_z_mult: 10
+    batch_size:
+      forward: 64
+      backward_dataset: 0
+      backward_replay: 16
+    train_to_sample_ratio: 1
+    n_train_steps: 10000
+    bootstrap_tau: 0.0
+    clip_grad_norm: 1.0
+  state_flow: null
+  mask_invalid_actions: true
+  temperature_logits: 1.0
+  random_action_prob: 0.1
+  replay_sampling: permutation
+  train_sampling: permutation
+  use_context: false
+  garbage_collection_period: 0
+  collect_reversed_logprobs: false
+loss:
+  _target_: gflownet.losses.trajectorybalance.TrajectoryBalance
+  early_stopping_th: 0.0
+  ema_alpha: 0.5
+policy:
+  _target_: gflownet.policy.base.Policy
+  shared: null
+  forward:
+    type: mlp
+    n_hid: 128
+    n_layers: 2
+    checkpoint: null
+    reload_ckpt: false
+  backward:
+    shared_weights: true
+    checkpoint: null
+    reload_ckpt: false
+proxy:
+  _target_: gflownet.proxy.greenhouse.cropSimulatorProxy.CropSimulatorProxy
+  reward_function: identity
+  logreward_function: null
+  reward_function_kwargs: {}
+  reward_min: 0.0
+  do_clip_rewards: false
+  reward_cache_path: precomputed/reward_table_sf0.15.json
+  beta: 50
+logger:
+  _target_: gflownet.utils.logger.Logger
+  do:
+    online: true
+    times: true
+  project_name: gfn-crop-calibration
+  logdir:
+    root: ./logs
+    ckpts: ckpts
+    overwrite: true
+  debug: false
+  lightweight: false
+  progressbar:
+    skip: false
+    n_iters_mean: 100
+  context: '0'
+  notes: null
+  entity: null
+  run_id: null
+  is_resumed: false
+  run_name: null
+  run_name_date: true
+  run_name_job: true
+  tags:
+  - gflownet
+user:
+  logdir:
+    root: ./logs
+  data:
+    root: ./data
+    alanine_dipeptide: ~/gflownet/data/alanine_dipeptide_conformers_1.npy
+evaluator:
+  _target_: gflownet.evaluator.base.BaseEvaluator
+  first_it: true
+  period: 100
+  'n': 100
+  kde:
+    bandwidth: 0.1
+    kernel: gaussian
+  n_top_k: 5000
+  top_k: 100
+  top_k_period: -1
+  n_trajs_logprobs: 10
+  logprobs_batch_size: 100
+  logprobs_bootstrap_size: 10000
+  max_data_logprobs: 100000.0
+  n_grid: 40000
+  train_log_period: 1
+  checkpoints_period: 1000
+  metrics: all
+buffer:
+  _target_: gflownet.buffer.base.BaseBuffer
+  replay_buffer: null
+  replay_capacity: 0
+  train:
+    type: null
+    path: null
+    'n': null
+    seed: null
+  test:
+    type: null
+    path: null
+    'n': null
+    seed: null
+  use_main_buffer: false
+  check_diversity: false
+  diversity_check_reward_similarity: 0.1
+  progress_process_dataset: false
+device: cuda
+float_precision: 32
+n_samples: 0
+seed: 1
+random_action_prob: 0.1
+optimizer:
+  forward: 64
+  backward_replay: 16
