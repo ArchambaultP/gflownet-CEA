@@ -13,7 +13,7 @@ class CropSimEnv(FMUEnv):
         self.source = [()]
         self.group2id = {g: i for i, g in enumerate(GROUP_ORDER)}
         self.id2group = {i: g for g, i in self.group2id.items()}
-        self.pert2id = {p: i for i, p in enumerate({p for group in PERTURBATION_SCHEME.values() for p in group.keys()})}
+        self.pert2id = {p: i for i, p in enumerate(sorted({p for group in PERTURBATION_SCHEME.values() for p in group.keys()}))}
         self.id2pert = {i: p for p, i in self.pert2id.items()}
         self.action_space = self._build_action_space()
         self.action2idx = {a: i for i, a in enumerate(self.action_space)}
