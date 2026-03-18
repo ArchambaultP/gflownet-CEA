@@ -1,0 +1,170 @@
+{
+  "0.15": [
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-13_18-56-05_456203/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 0,
+      "wandb_id": "els7b27y"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-13_22-27-08_949381/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 0,
+      "wandb_id": "l7svoxjb"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-14_01-55-23_904962/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 0,
+      "wandb_id": "vyskbxt0"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-14_05-25-13_740568/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 1,
+      "wandb_id": "cipbdi05"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-14_08-57-32_959197/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 1,
+      "wandb_id": "kbc5gxt8"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-14_12-28-36_590721/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 1,
+      "wandb_id": "oor55gqt"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-14_15-58-31_313567/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 2,
+      "wandb_id": "mg8korqg"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-14_19-30-43_576903/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 2,
+      "wandb_id": "5rvmswx9"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-14_23-04-50_197527/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 2,
+      "wandb_id": "6iaqkbq4"
+    }
+  ],
+  "0.3": [
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-15_02-36-55_377125/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 0,
+      "wandb_id": "kw6y26nz"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-15_06-09-10_949167/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 0,
+      "wandb_id": "jtzce7hv"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-15_09-36-49_394412/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 0,
+      "wandb_id": "ndxf1fd8"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-15_12-24-29_864248/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 1,
+      "wandb_id": "5ccw8n50"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-15_16-04-38_982326/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 1,
+      "wandb_id": "ms0idtvk"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-15_19-32-14_962712/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 1,
+      "wandb_id": "jga7q83s"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-15_22-55-54_457237/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 2,
+      "wandb_id": "tv3txsd4"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-16_02-29-53_831184/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 2,
+      "wandb_id": "0qudoor4"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-16_05-02-20_538203/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 2,
+      "wandb_id": "iksc1zgw"
+    }
+  ],
+  "0.4": [
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-16_08-28-14_065372/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 0,
+      "wandb_id": "d2vw9f9s"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-16_13-06-55_005810/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 0,
+      "wandb_id": "f1smt9d2"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-16_15-35-02_762825/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 0,
+      "wandb_id": "0514ylcd"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-16_18-50-55_396771/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 1,
+      "wandb_id": "dv0673yx"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-16_22-21-37_618173/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 1,
+      "wandb_id": "4cjmarla"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-17_01-01-11_001564/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 1,
+      "wandb_id": "ft4hfae5"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-17_03-36-36_186676/ckpts/final.ckpt",
+      "lr": 0.0001,
+      "seed": 2,
+      "wandb_id": "5vc02gmd"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-17_06-42-45_427608/ckpts/final.ckpt",
+      "lr": 0.0005,
+      "seed": 2,
+      "wandb_id": "jx15kkb0"
+    },
+    {
+      "path": "/part/01/Tmp/archampa/gflownet-CEA/logs/local/2026-03-17_10-10-28_698321/ckpts/final.ckpt",
+      "lr": 0.001,
+      "seed": 2,
+      "wandb_id": "j753h555"
+    }
+  ]
+}
