@@ -1,5 +1,6 @@
 defaults:
   - env: simenv
+  - reward_cache: precomputed
   - gflownet: trajectorybalance
   - loss: trajectorybalance
   - policy: mlp_${gflownet}
@@ -20,18 +21,18 @@ n_samples: 100
 seed: 0
 random_action_prob: 0.1 # this should be higher for 2cycle
 
+
 optimizer:
   forward: 64
   backward_replay: 16
 
 env:
-  precomputed: False
+  precomputed: True
+  step_fraction: 0.3
 
 gflownet:
   optimizer:
-    n_train_steps: 10000
-
-
+    n_train_steps: 100
 
 # Hydra config
 hydra:

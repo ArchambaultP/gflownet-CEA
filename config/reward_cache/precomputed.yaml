@@ -1,0 +1,3 @@
+# Use precomputed reward cache
+proxy:
+  reward_cache_path: ${reward_dir}/reward_table_sf${env.step_fraction}.json
