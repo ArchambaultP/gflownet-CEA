@@ -1,0 +1,139 @@
+[OK] Imported CropSimEnv from gflownet package
+Forward MLP: 61 -> 128 -> 13
+
+======================================================================
+TEST 1: Policy input comparison (my reconstruction vs actual env)
+======================================================================
+[CRITICAL] pert2id MISMATCH!
+  Env:  {'decrease': 0, 'more_fruit_growth': 1, 'lower_resp_cost': 2, 'none': 3, 'widen_optimum': 4, 'shift_cold': 5, 'lower_sensitivity': 6, 'shift_warm': 7, 'increase': 8, 'narrow_optimum': 9, 'higher_resp_cost': 10, 'higher_sensitivity': 11, 'more_veg_growth': 12}
+  Mine: {'increase': 0, 'lower_sensitivity': 1, 'shift_warm': 2, 'higher_resp_cost': 3, 'higher_sensitivity': 4, 'more_veg_growth': 5, 'shift_cold': 6, 'none': 7, 'widen_optimum': 8, 'lower_resp_cost': 9, 'more_fruit_growth': 10, 'decrease': 11, 'narrow_optimum': 12}
+
+  Step 0 (before choosing 'increase'):
+    vec[0] (step):    env=1.0  mine=1.0
+    vec[1] (sf):      env=0.3000  mine=0.3000
+    vec[2:7] (perts): env=[-1. -1. -1. -1. -1.]  mine=[-1. -1. -1. -1. -1.]
+    Max diff: 0.00000005, Mismatched dims: 0/61
+    [OK] Vectors match
+
+  Step 1 (before choosing 'increase'):
+    vec[0] (step):    env=2.0  mine=2.0
+    vec[1] (sf):      env=0.3000  mine=0.3000
+    vec[2:7] (perts): env=[ 0. -1. -1. -1. -1.]  mine=[ 0. -1. -1. -1. -1.]
+    Max diff: 0.60000000, Mismatched dims: 3/61
+    [MISMATCH] Differences found!
+      dim 16 (LAI_max): env=0.20000000  mine=0.80000000
+      dim 18 (SLA): env=0.20000000  mine=0.80000000
+      dim 45 (n_plants): env=0.20000000  mine=0.80000000
+
+  Step 2 (before choosing 'shift_cold'):
+    vec[0] (step):    env=3.0  mine=3.0
+    vec[1] (sf):      env=0.3000  mine=0.3000
+    vec[2:7] (perts): env=[ 0.  0. -1. -1. -1.]  mine=[ 0.  0. -1. -1. -1.]
+    Max diff: 0.60000001, Mismatched dims: 8/61
+    [MISMATCH] Differences found!
+      dim 7 (CO2_air_stomata): env=0.20000000  mine=0.80000000
+      dim 9 (J_max_leaf): env=0.20000000  mine=0.80000000
+      dim 16 (LAI_max): env=0.20000000  mine=0.80000000
+      dim 18 (SLA): env=0.20000000  mine=0.80000000
+      dim 21 (Tcan_CO2_comp_point): env=0.80000001  mine=0.20000000
+      dim 22 (alpha): env=0.20000000  mine=0.80000000
+      dim 45 (n_plants): env=0.20000000  mine=0.80000000
+      dim 46 (net_ass_rate): env=0.80000001  mine=0.20000000
+
+  Step 3 (before choosing 'increase'):
+    vec[0] (step):    env=3.0  mine=4.0
+    vec[1] (sf):      env=0.3000  mine=0.3000
+    vec[2:7] (perts): env=[ 0.  0. -1. -1. -1.]  mine=[ 0.  0.  6. -1. -1.]
+    Max diff: 7.00000000, Mismatched dims: 18/61
+    [MISMATCH] Differences found!
+      dim 0 (idx_0): env=3.00000000  mine=4.00000000
+      dim 4 (idx_4): env=-1.00000000  mine=6.00000000
+      dim 7 (CO2_air_stomata): env=0.20000000  mine=0.80000000
+      dim 9 (J_max_leaf): env=0.20000000  mine=0.80000000
+      dim 16 (LAI_max): env=0.20000000  mine=0.80000000
+      dim 18 (SLA): env=0.20000000  mine=0.80000000
+      dim 21 (Tcan_CO2_comp_point): env=0.80000001  mine=0.20000000
+      dim 22 (alpha): env=0.20000000  mine=0.80000000
+      dim 37 (k_sw_max_Tcan): env=0.54545456  mine=0.20000000
+      dim 38 (k_sw_max_Tcan24): env=0.61111110  mine=0.20000000
+      dim 40 (k_sw_min_Tcan): env=0.45454547  mine=0.20000000
+      dim 41 (k_sw_min_Tcan24): env=0.40000001  mine=0.20000000
+      dim 45 (n_plants): env=0.20000000  mine=0.80000000
+      dim 46 (net_ass_rate): env=0.80000001  mine=0.20000000
+      dim 56 (s_max_Tcan): env=0.39899999  mine=0.50000000
+      dim 57 (s_max_Tcan24): env=0.42602667  mine=0.50000000
+      dim 58 (s_min_Tcan): env=0.57363635  mine=0.50000000
+      dim 59 (s_min_Tcan24): env=0.56086665  mine=0.50000000
+
+  Step 4 (before choosing 'lower_resp_cost'):
+    vec[0] (step):    env=3.0  mine=5.0
+    vec[1] (sf):      env=0.3000  mine=0.3000
+    vec[2:7] (perts): env=[ 0.  0. -1. -1. -1.]  mine=[ 0.  0.  6.  0. -1.]
+    Max diff: 7.00000000, Mismatched dims: 25/61
+    [MISMATCH] Differences found!
+      dim 0 (idx_0): env=3.00000000  mine=5.00000000
+      dim 4 (idx_4): env=-1.00000000  mine=6.00000000
+      dim 5 (idx_5): env=-1.00000000  mine=0.00000000
+      dim 7 (CO2_air_stomata): env=0.20000000  mine=0.80000000
+      dim 9 (J_max_leaf): env=0.20000000  mine=0.80000000
+      dim 16 (LAI_max): env=0.20000000  mine=0.80000000
+      dim 18 (SLA): env=0.20000000  mine=0.80000000
+      dim 19 (TS_end): env=0.79374999  mine=0.20000000
+      dim 21 (Tcan_CO2_comp_point): env=0.80000001  mine=0.20000000
+      dim 22 (alpha): env=0.20000000  mine=0.80000000
+      dim 23 (bias_g_Tcan24): env=1.37333333  mine=0.80000000
+      dim 24 (c_dev1): env=0.56615382  mine=0.80000000
+      dim 25 (c_dev2): env=0.33000001  mine=0.80000000
+      dim 37 (k_sw_max_Tcan): env=0.54545456  mine=0.20000000
+      dim 38 (k_sw_max_Tcan24): env=0.61111110  mine=0.20000000
+      dim 40 (k_sw_min_Tcan): env=0.45454547  mine=0.20000000
+      dim 41 (k_sw_min_Tcan24): env=0.40000001  mine=0.20000000
+      dim 45 (n_plants): env=0.20000000  mine=0.80000000
+      dim 46 (net_ass_rate): env=0.80000001  mine=0.20000000
+      dim 47 (r_fruit_Set): env=0.24242425  mine=0.20000000
+      dim 56 (s_max_Tcan): env=0.39899999  mine=0.50000000
+      dim 57 (s_max_Tcan24): env=0.42602667  mine=0.50000000
+      dim 58 (s_min_Tcan): env=0.57363635  mine=0.50000000
+      dim 59 (s_min_Tcan24): env=0.56086665  mine=0.50000000
+      dim 60 (slope_g_Tcan24): env=-0.09285714  mine=0.80000000
+
+======================================================================
+TEST 2: Exact enumeration vs forward-pass sampling
+======================================================================
+  Computing exact distribution (2625 states)...
+  Sampling 50000 trajectories...
+
+  Exact vs Sampling:
+    Pearson r:  0.999012  (should be >0.99)
+    JSD:        0.00169364  (should be <0.001)
+    States visited by sampler: 515/2625
+
+  Top 10 states by exact P_GFN:
+  State                                                             Exact  Empirical
+  ----------------------------------------------------------------------------------
+  decrease|lower_sensitivity|shift_cold|increase|lower_resp_cost   0.036852   0.036820
+  decrease|lower_sensitivity|none|increase|lower_resp_cost       0.031262   0.031540
+  decrease|lower_sensitivity|widen_optimum|increase|lower_resp_cost   0.030024   0.030740
+  decrease|lower_sensitivity|shift_warm|increase|lower_sensitivity   0.020665   0.021120
+  decrease|lower_sensitivity|shift_cold|increase|higher_resp_cost   0.017889   0.017140
+  increase|decrease|none|increase|lower_resp_cost                0.016727   0.017240
+  decrease|lower_sensitivity|widen_optimum|increase|higher_resp_cost   0.016373   0.016340
+  increase|decrease|shift_cold|increase|lower_resp_cost          0.016032   0.016160
+  decrease|lower_sensitivity|none|increase|higher_resp_cost      0.015748   0.015200
+  increase|increase|shift_cold|increase|lower_resp_cost          0.015720   0.016380
+
+======================================================================
+TEST 3: P_GFN vs P*
+======================================================================
+  P_GFN (exact) vs P*:
+    Pearson r:  0.004292
+    JSD:        0.633575
+    L1:         1.919047
+    N_eff(GFN): 180
+    N_eff(*):   41
+
+======================================================================
+VERDICT
+======================================================================
+  Exact enumeration matches sampling -> enumeration is CORRECT.
+  If P_GFN looks bad, the GFN genuinely hasn't converged.
