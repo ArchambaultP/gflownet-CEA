@@ -1,11 +1,10 @@
 defaults:
   - env: simenv
-  - reward_cache: precomputed
   - gflownet: trajectorybalance
   - loss: trajectorybalance
   - policy: mlp_${gflownet}
   - proxy: cropSimulation
-  - logger: base
+  - logger: wandb
   - user: default
   - evaluator: base
   - buffer: base
@@ -21,6 +20,10 @@ n_samples: 100
 seed: 0
 random_action_prob: 0.1 # this should be higher for 2cycle
 
+# hydra:
+#   sweep:
+#     dir: ${user.logdir.root}/${oc.env:SLURM_JOB_ID,local}/multirun/${now:%Y-%m-%d_%H-%M-%S_%f}
+#     subdir: ${hydra.job.num}
 
 optimizer:
   forward: 64
@@ -34,6 +37,9 @@ gflownet:
   optimizer:
     n_train_steps: 100
 
+proxy:
+  beta: 50
+
 # Hydra config
 hydra:
   # See: https://hydra.cc/docs/configure_hydra/workdir/
@@ -46,3 +52,8 @@ hydra:
     # See: https://hydra.cc/docs/upgrades/1.1_to_1.2/changes_to_job_working_dir/
     # See: https://hydra.cc/docs/tutorials/basic/running_your_app/working_directory/#disable-changing-current-working-dir-to-jobs-output-dir
     chdir: False
+  sweeper:
+    params:
+      proxy.beta: 10, 15, 20
+      env.step_fraction: 0.15, 0.3, 0.4
+      gflownet.optimizer.lr: 1e-4, 1e-3

@@ -1,0 +1,2 @@
+# Use precomputed reward cache
+reward_cache_path: precomputed/reward_table_sf${env.step_fraction}.json

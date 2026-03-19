@@ -3,10 +3,8 @@ defaults:
 
 _target_: gflownet.proxy.greenhouse.cropSimulatorProxy.CropSimulatorProxy
 
-# Path to precomputed reward table (JSON).
-# Set to null to use live FMU evaluation.
-# File format: {"mode_key": {"params": {...}, "loss": float}}
-reward_cache_path: ${oc.env:REWARD_CACHE_PATH,null}
+# reward_cache_path: null
+reward_cache_path: precomputed/reward_table_sf${env.step_fraction}.json
 
 # Inverse temperature for R(x) = exp(-beta * L(x))
 # Calibrate with calibrate_beta.py: beta = 4.6 / L_midpoint

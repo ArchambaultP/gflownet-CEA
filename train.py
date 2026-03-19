@@ -35,18 +35,18 @@ def main(config):
 
     # Initialize a GFlowNet agent from the configuration file
     gflownet = gflownet_from_config(config)
-    _original_end = gflownet.logger.end
+    # _original_end = gflownet.logger.end
 
-    def _end_with_timeout():
-        import threading
-        # Force exit if wandb.finish() takes more than 60s
-        timer = threading.Timer(60.0, lambda: os._exit(0))
-        timer.daemon = True
-        timer.start()
-        _original_end()
-        timer.cancel()
+    # def _end_with_timeout():
+    #     import threading
+    #     # Force exit if wandb.finish() takes more than 60s
+    #     timer = threading.Timer(60.0, lambda: os._exit(0))
+    #     timer.daemon = True
+    #     timer.start()
+    #     _original_end()
+    #     timer.cancel()
 
-    gflownet.logger.end = _end_with_timeout
+    # gflownet.logger.end = _end_with_timeout
 
     import wandb
     if wandb.run is not None:
@@ -54,28 +54,10 @@ def main(config):
             "step_fraction": os.environ.get("STEP_FRACTION", "unknown"),
             "reward_cache": os.environ.get("REWARD_CACHE_PATH", "none"),
         })
+        wandb.run._settings._disable_async = True
+        wandb.run._settings._disable_stats = True
     # Train GFlowNet
     gflownet.train()
-
-    # Sample from trained GFlowNet
-    # TODO: move to method in GFlowNet agent, like sample_and_log()
-    if config.n_samples > 0 and config.n_samples <= 1e5:
-        batch, times = gflownet.sample_batch(n_forward=config.n_samples, train=False)
-        x_sampled = batch.get_terminating_states(proxy=True)
-        energies = gflownet.proxy(x_sampled)
-        x_sampled = batch.get_terminating_states()
-        df = pd.DataFrame(
-            {
-                "readable": [gflownet.env.state2readable(x) for x in x_sampled],
-                "energies": energies.tolist(),
-            }
-        )
-        samples_dir = Path("./samples/")
-        samples_dir.mkdir(parents=True, exist_ok=True)
-        df.to_csv(samples_dir / "gfn_samples.csv")
-        dct = {"x": x_sampled, "energy": energies}
-        pickle.dump(dct, open(samples_dir / "gfn_samples.pkl", "wb"))
-    
 
     # Print replay buffer
     if len(gflownet.buffer.replay) > 0:
@@ -94,6 +76,9 @@ def main(config):
     # TODO: make it gflownet.end() - perhaps there are other things to end
     gflownet.logger.end()
 
+    import wandb
+    if wandb.run is not None:
+        wandb.finish()
 
 def set_seeds(seed):
     import numpy as np

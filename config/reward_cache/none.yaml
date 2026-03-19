@@ -1,3 +1,0 @@
-# No precomputed reward cache
-proxy:
-  reward_cache_path: null
