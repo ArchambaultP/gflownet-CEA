@@ -15,7 +15,6 @@ import optuna
 import numpy as np
 from copy import deepcopy
 import wandb
-from optuna.integration.wandb import WeightsAndBiasesCallback
 from datetime import datetime
 
 
@@ -121,6 +120,7 @@ def objective(trial: optuna.Trial) -> float:
     wandb.log({
         "loss": loss,
         "reward": reward,
+        "trial_step": trial.number,
         **current_params,
     })
 
@@ -134,10 +134,7 @@ def objective(trial: optuna.Trial) -> float:
 if __name__ == "__main__":
     run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     wandb.init(mode="online", name=run_name, project="optuna-crop-calibration")
-    wandb_callback = WeightsAndBiasesCallback(
-        metric_name="objective",
-        wandb_kwargs={"project": "optuna-crop-calibration"}
-    )
+    wandb.define_metric("*", step_metric="trial_step")
 
     study = optuna.create_study(
         direction="maximize",
@@ -147,7 +144,7 @@ if __name__ == "__main__":
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study.optimize(objective, 
                    n_trials=N_EVALUATIONS,
-                   callbacks=[wandb_callback])
+                   )
 
     # --------------------------------------------------------
     # 7. Collect results
