@@ -84,7 +84,7 @@ class CropSimulatorProxy(Proxy):
             self._init_fmu()
 
         full_config = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **config}
-                
+
         team_losses = self.pool.evaluate(full_config)
         if not team_losses:
             return 1e6
@@ -108,7 +108,6 @@ class CropSimulatorProxy(Proxy):
                 for i, name in enumerate(self.parameter_names):
                     config[name] = float(batch[i])
                 loss = self._evaluate_live(config)
-                print(f"{config}")
 
             # we switch reward from exponential to power law
             # beta is named that to simplify code
