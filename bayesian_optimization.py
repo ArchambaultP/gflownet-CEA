@@ -117,6 +117,13 @@ def objective(trial: optuna.Trial) -> float:
     loss = simulate_and_evaluate(current_params)
     reward = compute_reward(loss, BETA)
 
+
+    wandb.log({
+        "loss": loss,
+        "reward": reward,
+        **current_params,
+    })
+
     return reward
 
 
