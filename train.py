@@ -54,8 +54,6 @@ def main(config):
             "step_fraction": os.environ.get("STEP_FRACTION", "unknown"),
             "reward_cache": os.environ.get("REWARD_CACHE_PATH", "none"),
         })
-        wandb.run._settings._disable_async = True
-        wandb.run._settings._disable_stats = True
     # Train GFlowNet
     gflownet.train()
 
@@ -75,10 +73,6 @@ def main(config):
     # Close logger
     # TODO: make it gflownet.end() - perhaps there are other things to end
     gflownet.logger.end()
-
-    import wandb
-    if wandb.run is not None:
-        wandb.finish()
 
 def set_seeds(seed):
     import numpy as np
