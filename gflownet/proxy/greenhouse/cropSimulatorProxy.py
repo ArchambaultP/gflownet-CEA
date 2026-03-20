@@ -28,14 +28,14 @@ class CropSimulatorProxy(Proxy):
         self.data_dir = "data/greenhouse/secondEdition"
         self.fmu_path = "fmu/FMU/tomato.fmu"
         self.step_size = 120.0
-        self.parameter_names = sorted(PARAMETER_BOUNDS.keys())
+        self.parameter_names = sorted(BASELINE_PARAMETERS.keys())
         self.beta = beta if beta is not None else 95
 
         # Load precomputed cache if available
         self.reward_cache = {}
         self.cache_hits = 0
         self.cache_misses = 0
-
+        
         if reward_cache_path and os.path.exists(reward_cache_path):
             self._load_cache(reward_cache_path)
             self.precomputed = True
@@ -63,14 +63,6 @@ class CropSimulatorProxy(Proxy):
         # Also store action-keyed version for debugging
         self.action_cache = {k: v["loss"] for k, v in raw.items()}
 
-    def _hash_params(self, params):
-        rounded = tuple(
-            round(float(params[k]), 4)
-            for k in self.parameter_names
-            if k in params
-        )
-        return hashlib.md5(str(rounded).encode()).hexdigest()
-
     def _init_fmu(self):
         from fmu.pool import PersistentFMUPool
 
@@ -92,27 +84,7 @@ class CropSimulatorProxy(Proxy):
             self._init_fmu()
 
         full_config = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **config}
-        
-        # def log_callback(instance_environment, instance_name, status, category, message):
-        #     print(f"[FMU] {category}: {message}")
-
-        # tomato = TomatoController('fmu/FMU/tomato.fmu', 
-        #                             start_time=0, # inital simulation time (in seconds). should not change
-        #                             stop_time=86400.0 * 200, # Final simulation time (in seconds).
-        #                             step_size=120.0, #numerical solver step size (in seconds)
-        #                             logger=log_callback)
-        
-        # test_inp = self.team_input['Reference']
-        # test_cond = full_config
-        # # test_setpoint = [86400*150]
-
-        # test_out = tomato.simulate(test_inp, test_setpoint, init_conds=test_cond)
-        # # inputs = [(0, {"CO2_Air":400.0, "PAR_gh":500.0, "TCan":20.0, "TCan24":20.0})]
-        # # setpoints = [86400.0 * 30]
-
-        # # out = tomato.simulate(inputs, setpoints, None)
-        # # breakpoint()
-        
+                
         team_losses = self.pool.evaluate(full_config)
         if not team_losses:
             return 1e6
@@ -136,7 +108,7 @@ class CropSimulatorProxy(Proxy):
                 for i, name in enumerate(self.parameter_names):
                     config[name] = float(batch[i])
                 loss = self._evaluate_live(config)
-
+                print(f"{config}")
 
             # we switch reward from exponential to power law
             # beta is named that to simplify code
