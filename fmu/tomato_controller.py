@@ -4,6 +4,8 @@ import tempfile
 from fmpy import read_model_description, extract
 from fmpy.fmi3 import FMU3Slave
 from fmu.fmu_controller import FMUController
+import shutil
+import os
 
 class TomatoController(FMUController):
     """
@@ -13,9 +15,10 @@ class TomatoController(FMUController):
     """
     def __init__(self, fmu_path, start_time=0.0, stop_time=86400.0, step_size=120, logger=None, **kwargs):
         super().__init__(fmu_path, start_time, stop_time, step_size, logger, **kwargs)
-        fmu, model_dsc, _ = self.instantiate_clean_fmu()
+        fmu, model_dsc, unzipdir = self.instantiate_clean_fmu()
         self.fmu = fmu
         self.model_description = model_dsc
+        self.unzipdir = unzipdir
 
     # def instantiate_clean_fmu(self):
 
@@ -156,4 +159,16 @@ class TomatoController(FMUController):
         
 
         return out
+    
+    def close(self):
+        try:
+            self.fmu.terminate()
+        except Exception:
+            pass
+        try:
+            self.fmu.freeInstance()
+        except Exception:
+            pass
+        if self.unzipdir and os.path.isdir(self.unzipdir):
+            shutil.rmtree(self.unzipdir, ignore_errors=True)
     

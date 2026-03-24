@@ -130,6 +130,7 @@ def run_in_fork(config, timeout=60):
             data = pickle.dumps(result)
             os.write(w_fd, struct.pack('<I', len(data)))
             os.write(w_fd, data)
+            controller.close()
         except Exception:
             pass
         os.close(w_fd)
