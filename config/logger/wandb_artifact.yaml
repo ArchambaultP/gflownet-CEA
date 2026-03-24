@@ -1,0 +1,13 @@
+defaults:
+  - base
+
+_target_: gflownet.utils.artifact_logger.ArtifactLogger
+
+tags:
+    - gflownet
+
+do:
+  online: True        # not offline — you want to see results remotely
+  times: True         # logs wall-clock time per step
+
+project_name: "gfn-crop-calibration"
