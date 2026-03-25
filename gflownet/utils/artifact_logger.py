@@ -13,6 +13,8 @@ Usage in config:
     artifact_type: model          # wandb artifact type
 """
 
+import torch
+
 from gflownet.utils.logger import Logger
 
 
@@ -152,7 +154,11 @@ class ArtifactLogger(Logger):
         if final:
             aliases.append("final")
 
-        self.run.log_artifact(artifact, aliases=aliases)
-
-        if self.debug:
-            print(f"\t[wandb] Logged artifact {artifact_name} (step={step})")
+        try:
+            logged = self.run.log_artifact(artifact, aliases=aliases)
+            # Wait for the upload to complete before wandb.finish() can close
+            logged.wait()
+            print(f"  [wandb] Uploaded artifact {artifact_name} "
+                  f"({ckpt_path.stat().st_size} bytes, step={step})")
+        except Exception as e:
+            print(f"  [wandb] ERROR uploading artifact: {e}")

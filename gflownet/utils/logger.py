@@ -93,7 +93,7 @@ class Logger:
                     project=project_name,
                     entity=entity,
                     resume="allow",
-                    reinit="finish",
+                    reinit="finish_previous",
                 )
             else:
                 self.run = self.wandb.init(
@@ -103,7 +103,7 @@ class Logger:
                     notes=notes,
                     entity=entity,
                     resume="allow",
-                    reinit="finish",
+                    reinit="finish_previous",
                 )
         else:
             self.wandb = None
@@ -381,4 +381,6 @@ class Logger:
         if not self.do.online:
             return
         
+        print("[wandb] Finishing run...")
         self.wandb.finish()
+        print("[wandb] Run finished.")
