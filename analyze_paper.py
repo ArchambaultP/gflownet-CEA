@@ -466,107 +466,103 @@ def fetch_wandb_runs(
     lr_z_mults=None,
     random_action_probs=None,
     states=None,
+    run_ids=None,
+    after_run_id=None,
     history_samples=500,
 ):
     import wandb
     api = wandb.Api()
 
-    filters = build_wandb_filters(
-        seeds=seeds,
-        step_fractions=step_fractions,
-        betas=betas,
-        learning_rates=learning_rates,
-        lr_z_mults=lr_z_mults,
-        random_action_probs=random_action_probs,
-        states=states,
-    )
+    # If after_run_id is set, look up its creation time to use as a cutoff
+    after_time = None
+    if after_run_id:
+        try:
+            ref_run = api.run(f"{project}/{after_run_id}")
+            after_time = ref_run.created_at
+            print(f"[wandb] Filtering runs created after {after_run_id} ({after_time})")
+        except wandb.errors.CommError:
+            print(f"[WARN] Reference run {after_run_id} not found — ignoring --wandb_after")
 
-    print(f"[wandb] Querying {project} with filters: {filters or '(none)'}")
-    runs = api.runs(project, filters=filters)
-    print(f"[wandb] Found {len(runs)} matching runs")
+    # If specific run IDs are given, fetch them directly (skip filters)
+    if run_ids:
+        print(f"[wandb] Fetching {len(run_ids)} specific runs by ID")
+        runs = []
+        for rid in run_ids:
+            try:
+                runs.append(api.run(f"{project}/{rid}"))
+            except wandb.errors.CommError:
+                print(f"  [SKIP] {rid}: run not found")
+        print(f"[wandb] Found {len(runs)} runs")
+    else:
+        filters = build_wandb_filters(
+            seeds=seeds,
+            step_fractions=step_fractions,
+            betas=betas,
+            learning_rates=learning_rates,
+            lr_z_mults=lr_z_mults,
+            random_action_probs=random_action_probs,
+            states=states,
+        )
+
+        # Add time filter if after_run_id was specified
+        if after_time:
+            filters["created_at"] = {"$gte": after_time}
+
+        print(f"[wandb] Querying {project} with filters: {filters or '(none)'}")
+        runs = api.runs(project, filters=filters)
+        print(f"[wandb] Found {len(runs)} matching runs")
 
     out = []
-    for run_idx, run in enumerate(runs):
+    for run in runs:
         cfg = run.config
 
-        # Debug: dump first run's raw config to understand the structure
-        if run_idx == 0:
-            print("[DEBUG] === Raw run.config for first run ===")
-            for k in sorted(cfg.keys()):
-                v = cfg[k]
-                if isinstance(v, dict):
-                    print(f"  cfg['{k}'] type=dict, keys={sorted(v.keys())}")
-                    if "value" in v:
-                        inner = v["value"]
-                        if isinstance(inner, dict):
-                            print(f"    cfg['{k}']['value'] type=dict, keys={sorted(inner.keys())}")
-                        else:
-                            print(f"    cfg['{k}']['value'] = {inner!r}")
+        if not cfg:
+            # Config is empty (common with Hydra multirun bug).
+            # Still include the run — artifact metadata may have what we need,
+            # and the checkpoint can still be evaluated.
+            print(f"  [WARN] {run.id}: empty config, using artifact metadata if available (state={run.state})")
+
+            # Try to get metadata from the run's checkpoint artifact
+            meta = {}
+            try:
+                import wandb as _wb
+                _api = _wb.Api()
+                artifact = _api.artifact(f"{project}/ckpt-{run.id}:latest")
+                meta = artifact.metadata or {}
+            except Exception:
+                pass
+
+            sf = meta.get("step_fraction", "unknown")
+            lr = meta.get("lr")
+            seed = meta.get("seed")
+            beta = meta.get("beta")
+            lr_z_mult = meta.get("lr_z_mult")
+            random_action_prob = meta.get("random_action_prob")
+            logdir = ""
+        else:
+            # step_fraction
+            sf = cfg.get("env", {}).get("step_fraction", None)
+            if sf is None or sf == "unknown":
+                sf = cfg.get("step_fraction", None)
+            if sf is None or sf == "unknown":
+                # Last resort: parse from reward_cache_path
+                cache_path = cfg.get("proxy", {}).get("reward_cache_path", "")
+                if isinstance(cache_path, str) and "sf" in cache_path:
+                    try:
+                        sf = float(cache_path.split("sf")[1].split(".json")[0])
+                    except (ValueError, IndexError):
+                        sf = "unknown"
                 else:
-                    print(f"  cfg['{k}'] = {v!r}")
-            print("[DEBUG] === End raw config ===")
-
-        # Robust getter: tries key directly, then via .value wrapper
-        def _v(d, key):
-            """Get key from dict d, handling optional .value nesting."""
-            if not isinstance(d, dict):
-                return None
-            # Direct access
-            if key in d:
-                val = d[key]
-                # Unwrap .value if it's a single-key dict
-                if isinstance(val, dict) and list(val.keys()) == ["value"]:
-                    return val["value"]
-                return val
-            return None
-
-        def _deep(d, *keys):
-            """Walk through nested dict with .value unwrapping at each level."""
-            for key in keys:
-                if not isinstance(d, dict):
-                    return None
-                # Try direct
-                if key in d:
-                    d = d[key]
-                # Try via .value
-                elif "value" in d:
-                    inner = d["value"]
-                    if isinstance(inner, dict) and key in inner:
-                        d = inner[key]
-                    else:
-                        return None
-                else:
-                    return None
-                # Unwrap terminal .value
-                if isinstance(d, dict) and list(d.keys()) == ["value"]:
-                    d = d["value"]
-            return d
-
-        # step_fraction
-        sf = _deep(cfg, "env", "step_fraction")
-        if sf is None or sf == "unknown":
-            sf = _deep(cfg, "step_fraction")
-        if sf is None or sf == "unknown":
-            # Last resort: parse from reward_cache_path
-            cache_path = _deep(cfg, "proxy", "reward_cache_path") or ""
-            if isinstance(cache_path, str) and "sf" in cache_path:
-                try:
-                    sf = float(cache_path.split("sf")[1].split(".json")[0])
-                except (ValueError, IndexError):
                     sf = "unknown"
-            else:
-                sf = "unknown"
 
-        lr = _deep(cfg, "gflownet", "optimizer", "lr")
-        seed = _deep(cfg, "gflownet", "seed")
-        if seed is None:
-            seed = _deep(cfg, "seed")
-        beta = _deep(cfg, "proxy", "beta")
-        lr_z_mult = _deep(cfg, "gflownet", "optimizer", "lr_z_mult")
-        random_action_prob = _deep(cfg, "gflownet", "random_action_prob")
-        if random_action_prob is None:
-            random_action_prob = _deep(cfg, "random_action_prob")
-        logdir = _deep(cfg, "logger", "logdir", "path") or ""
+            lr = cfg.get("gflownet", {}).get("optimizer", {}).get("lr", None)
+            seed = cfg.get("gflownet", {}).get("seed", cfg.get("seed", None))
+            beta = cfg.get("proxy", {}).get("beta", None)
+            lr_z_mult = cfg.get("gflownet", {}).get("optimizer", {}).get("lr_z_mult", None)
+            random_action_prob = cfg.get("gflownet", {}).get(
+                "random_action_prob", cfg.get("random_action_prob", None)
+            )
+            logdir = cfg.get("logger", {}).get("logdir", {}).get("path", "")
 
         hist = run.history(samples=history_samples)
         history = {}
@@ -1173,6 +1169,12 @@ def main():
                         help="Filter wandb runs by GFLOWNET.OPTIMIZER.LR_Z_MULT values")
     parser.add_argument("--wandb_random_action_probs", nargs="+", type=float, default=None,
                         help="Filter wandb runs by GFLOWNET.RANDOM_ACTION_PROB values")
+    parser.add_argument("--wandb_run_ids", nargs="+", default=None,
+                        help="Fetch specific wandb runs by ID (e.g. f048bllh 7ssnab2n). "
+                             "Overrides all other filters when specified.")
+    parser.add_argument("--wandb_after", default=None, metavar="RUN_ID",
+                        help="Only include runs created after this run ID. "
+                             "Useful to skip old runs with broken configs.")
     parser.add_argument("--output_dir", default="figures")
     parser.add_argument("--cache_dir", default="cache")
     parser.add_argument("--device", default="cpu")
@@ -1199,6 +1201,9 @@ def main():
     runs_data = None
     wandb_cache = os.path.join(args.cache_dir, "wandb_runs.json")
     need_wandb = args.wandb_project and not args.skip_wandb
+    # Also need wandb if specific run IDs are requested
+    if args.wandb_run_ids and args.wandb_project:
+        need_wandb = True
 
     if need_wandb:
         print("=" * 60)
@@ -1214,6 +1219,8 @@ def main():
                 lr_z_mults=args.wandb_lr_z_mults,
                 random_action_probs=args.wandb_random_action_probs,
                 states=args.wandb_states,
+                run_ids=args.wandb_run_ids,
+                after_run_id=args.wandb_after,
                 history_samples=args.wandb_history_samples,
             )
             with open(wandb_cache, "w") as f:

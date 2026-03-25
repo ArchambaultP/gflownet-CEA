@@ -62,6 +62,7 @@ def main(config):
         print("\nReplay buffer:")
         print(gflownet.buffer.replay)
     
+    gflownet.proxy.save_final_cache()
     print("Shutting Down")
     try:
         gflownet.proxy.pool.shutdown()
@@ -69,6 +70,7 @@ def main(config):
     except Exception as e:
         print(f"Exception: {e}")
         pass
+
 
     # Close logger
     # TODO: make it gflownet.end() - perhaps there are other things to end

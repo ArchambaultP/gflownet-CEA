@@ -18,7 +18,18 @@ from data.greenhouse.secondEdition.extract import (
 
 class CropSimulatorProxy(Proxy):
 
-    def __init__(self, reward_cache_path=None, beta=None, **kwargs):
+    def __init__(self, reward_cache_path=None, beta=None, cache_save_every=100, **kwargs):
+        """
+        Parameters
+        ----------
+        reward_cache_path : str or None
+            Path to a JSON file for the reward cache. If the file exists, it is
+            loaded. New evaluations are appended and periodically saved back.
+        beta : float or None
+            Exponent for the power-law reward: reward = (1/loss)^beta.
+        cache_save_every : int
+            Save the cache to disk every N new evaluations. Default: 100.
+        """
         super().__init__(**kwargs)
 
         self.teams = [
@@ -31,37 +42,80 @@ class CropSimulatorProxy(Proxy):
         self.parameter_names = sorted(BASELINE_PARAMETERS.keys())
         self.beta = beta if beta is not None else 95
 
-        # Load precomputed cache if available
+        # Cache configuration
         self.reward_cache = {}
         self.cache_hits = 0
         self.cache_misses = 0
-        
+        self.cache_new = 0  # count of new entries since last save
+        self.cache_save_every = cache_save_every
+        self.reward_cache_path = reward_cache_path
+
+        # Load existing cache if available
         if reward_cache_path and os.path.exists(reward_cache_path):
             self._load_cache(reward_cache_path)
-            self.precomputed = True
+            self.precomputed = len(self.reward_cache) > 0
             print(f"Loaded {len(self.reward_cache)} cached evaluations from {reward_cache_path}")
         else:
             self.precomputed = False
-            print("No reward cache found — will use live FMU evaluation")
+            if reward_cache_path:
+                print(f"No cache found at {reward_cache_path} — will build lazily")
+            else:
+                print("No reward cache path — will use live FMU evaluation (no caching)")
 
         # Only initialize FMU infrastructure if we might need it
-        if not self.reward_cache:
+        if not self.precomputed:
             self._init_fmu()
+
+    def _make_cache_key(self, states_proxy_item):
+        """
+        Create a deterministic cache key from a proxy state.
+
+        For action-string keys (1-cycle precomputed): the key is the string itself.
+        For parameter vectors (2-cycle live): hash the rounded values to avoid
+        floating-point noise causing cache misses.
+        """
+        if isinstance(states_proxy_item, str):
+            return states_proxy_item
+
+        # Numeric vector — round to avoid float noise, then hash
+        if hasattr(states_proxy_item, 'tolist'):
+            vals = states_proxy_item.tolist()
+        elif isinstance(states_proxy_item, (list, tuple)):
+            vals = list(states_proxy_item)
+        else:
+            vals = [float(states_proxy_item)]
+
+        # Round to 8 decimal places to handle float imprecision
+        rounded = tuple(round(v, 8) for v in vals)
+        return hashlib.sha256(str(rounded).encode()).hexdigest()[:16]
 
     def _load_cache(self, path):
         with open(path) as f:
             raw = json.load(f)
 
         for key, entry in raw.items():
-            params = entry["params"]
-            loss = entry["loss"]
-            # Re-key by parameter hash so proxy can look up from values
+            if isinstance(entry, dict) and "loss" in entry:
+                self.reward_cache[key] = entry["loss"]
+            else:
+                # Support simple key: loss format too
+                self.reward_cache[key] = entry
 
-            cache_key = key
-            self.reward_cache[cache_key] = loss
+    def _save_cache(self):
+        """Save the current cache to disk."""
+        if not self.reward_cache_path:
+            return
 
-        # Also store action-keyed version for debugging
-        self.action_cache = {k: v["loss"] for k, v in raw.items()}
+        # Build the output format
+        cache_out = {}
+        for key, loss in self.reward_cache.items():
+            if isinstance(loss, (int, float)):
+                cache_out[key] = {"loss": loss}
+            else:
+                cache_out[key] = loss
+
+        os.makedirs(os.path.dirname(self.reward_cache_path) or ".", exist_ok=True)
+        with open(self.reward_cache_path, "w") as f:
+            json.dump(cache_out, f)
 
     def _init_fmu(self):
         from fmu.pool import PersistentFMUPool
@@ -97,26 +151,52 @@ class CropSimulatorProxy(Proxy):
         out = []
 
         for batch in states_proxy:
-            if self.precomputed:
-                if batch in self.reward_cache:
-                    loss = self.reward_cache[batch]
-                    self.cache_hits += 1
+            cache_key = self._make_cache_key(batch)
+
+            if cache_key in self.reward_cache:
+                loss = self.reward_cache[cache_key]
+                self.cache_hits += 1
             else:
                 # Build parameter config from GFlowNet output
-                self.cache_misses +=1
+                self.cache_misses += 1
                 config = {}
-                for i, name in enumerate(self.parameter_names):
-                    config[name] = float(batch[i])
-                loss = self._evaluate_live(config)
+                if isinstance(batch, str):
+                    # Action-string format — shouldn't happen for uncached states
+                    # but handle gracefully
+                    loss = 1e6
+                else:
+                    if hasattr(batch, 'tolist'):
+                        values = batch.tolist()
+                    else:
+                        values = list(batch)
+                    for i, name in enumerate(self.parameter_names):
+                        config[name] = float(values[i])
+                    loss = self._evaluate_live(config)
 
-            # we switch reward from exponential to power law
-            # beta is named that to simplify code
-            # it should be called alpha
-            reward = (1/loss) ** self.beta # -beta * loss
-            reward = np.clip(reward, min=1e-12)
+                # Store in cache
+                self.reward_cache[cache_key] = loss
+                self.cache_new += 1
+
+                # Periodically save cache to disk
+                if (self.reward_cache_path and
+                        self.cache_new >= self.cache_save_every):
+                    self._save_cache()
+                    print(f"  [CACHE] Saved {len(self.reward_cache)} entries "
+                          f"({self.cache_hits} hits, {self.cache_misses} misses)")
+                    self.cache_new = 0
+
+            reward = (1 / loss) ** self.beta
+            reward = np.clip(reward, a_min=1e-12, a_max=None)
             out.append(reward)
 
         return torch.tensor(out, dtype=self.float, device=self.device)
+
+    def save_final_cache(self):
+        """Call at the end of training to flush any remaining cached entries."""
+        if self.cache_new > 0:
+            self._save_cache()
+            print(f"  [CACHE] Final save: {len(self.reward_cache)} entries "
+                  f"({self.cache_hits} hits, {self.cache_misses} misses)")
 
     @staticmethod
     def compare_to_baseline(c):

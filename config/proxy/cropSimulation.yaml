@@ -5,6 +5,7 @@ _target_: gflownet.proxy.greenhouse.cropSimulatorProxy.CropSimulatorProxy
 
 # reward_cache_path: null
 reward_cache_path: precomputed/reward_table_sf${env.step_fraction}.json
+cache_save_every: 100
 
 # Inverse temperature for R(x) = exp(-beta * L(x))
 # Calibrate with calibrate_beta.py: beta = 4.6 / L_midpoint

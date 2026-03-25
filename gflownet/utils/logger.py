@@ -76,6 +76,11 @@ class Logger:
             import wandb
 
             self.wandb = wandb
+            # Force-close any previous run from Hydra multirun
+            try:
+                self.wandb.finish(quiet=True)
+            except Exception:
+                pass
             wandb_config = OmegaConf.to_container(
                 config, resolve=True, throw_on_missing=True
             )
@@ -88,6 +93,7 @@ class Logger:
                     project=project_name,
                     entity=entity,
                     resume="allow",
+                    reinit=True,
                 )
             else:
                 self.run = self.wandb.init(
@@ -97,6 +103,7 @@ class Logger:
                     notes=notes,
                     entity=entity,
                     resume="allow",
+                    reinit=True,
                 )
         else:
             self.wandb = None
@@ -373,4 +380,5 @@ class Logger:
     def end(self):
         if not self.do.online:
             return
+        
         self.wandb.finish()
