@@ -93,7 +93,7 @@ class Logger:
                     project=project_name,
                     entity=entity,
                     resume="allow",
-                    reinit=True,
+                    reinit="finish",
                 )
             else:
                 self.run = self.wandb.init(
@@ -103,7 +103,7 @@ class Logger:
                     notes=notes,
                     entity=entity,
                     resume="allow",
-                    reinit=True,
+                    reinit="finish",
                 )
         else:
             self.wandb = None

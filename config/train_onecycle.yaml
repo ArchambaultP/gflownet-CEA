@@ -62,7 +62,7 @@ hydra:
     params:
       seed: 0
       proxy.beta: 5, 10, 15
-      env.step_fraction: 0.15
+      env.step_fraction: 0.15, 0.3
       gflownet.optimizer.lr_z_mult: 1
       gflownet.optimizer.lr: 1e-3, 5e-4
       gflownet.random_action_prob: 0.2, 0.5, 0.8
