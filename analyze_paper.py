@@ -327,6 +327,52 @@ def compute_exact_gfn_distribution(model, step_fraction, device="cpu"):
     return {k: float(p) for k, p in zip(keys, probs)}
 
 
+@torch.no_grad()
+def sample_gfn_distribution(model, step_fraction, n_samples, device="cpu"):
+    """
+    Sample n_samples trajectories from the forward policy and estimate the
+    distribution by counting terminal state visits.
+    Returns dict: state_key → probability (sums to 1).
+    """
+    model = model.to(device)
+    counts = defaultdict(int)
+
+    for _ in range(n_samples):
+        config = {}
+        pert_ids = []
+        action_names = []
+
+        for group_idx in range(N_GROUPS):
+            step_num = group_idx + 1
+            vec = build_policy_input(step_num, step_fraction, pert_ids, config)
+            x = torch.tensor([vec], dtype=torch.float32, device=device)
+            logits = model(x)[0]
+
+            # Mask invalid actions
+            valid_ids = get_valid_action_ids(group_idx)
+            mask = torch.tensor([pid in valid_ids for pid in range(N_ACTIONS)],
+                                dtype=torch.bool, device=device)
+            masked_logits = logits.clone()
+            masked_logits[~mask] = float("-inf")
+
+            # Sample from the policy
+            probs = torch.softmax(masked_logits, dim=0)
+            action_id = torch.multinomial(probs, 1).item()
+            pert_name = ID2PERT[action_id]
+
+            pert_ids.append(action_id)
+            action_names.append(pert_name)
+            config = apply_perturbation(
+                step_fraction, GROUP_ORDER[group_idx], pert_name, config
+            )
+
+        key = state_to_key(tuple(action_names))
+        counts[key] += 1
+
+    total = sum(counts.values())
+    return {k: count / total for k, count in counts.items()}
+
+
 # ═══════════════════════════════════════════════════════════════════
 # GROUND TRUTH
 # ═══════════════════════════════════════════════════════════════════
@@ -351,32 +397,178 @@ WANDB_METRICS = [
 ]
 
 
-def fetch_wandb_runs(project):
+def build_wandb_filters(
+    seeds=None,
+    step_fractions=None,
+    betas=None,
+    learning_rates=None,
+    lr_z_mults=None,
+    random_action_probs=None,
+    states=None,
+):
+    """
+    Build a MongoDB-style filter dict for wandb api.runs().
+
+    Each parameter can be a single value or a list of values.
+    Only non-None parameters are included in the filter.
+
+    By default, states=None means no state filter (includes running,
+    finished, crashed, etc.). Pass states=["finished"] to restrict.
+
+    Note: wandb stores nested config values under '.value' keys, so
+    the filter paths must include them (e.g. config.gflownet.value.seed).
+    """
+    filters = {}
+
+    def _set(key, values):
+        if len(values) == 1:
+            filters[key] = values[0]
+        else:
+            filters[key] = {"$in": values}
+
+    if seeds is not None:
+        seeds = [seeds] if not isinstance(seeds, list) else seeds
+        _set("config.gflownet.value.seed", seeds)
+
+    if step_fractions is not None:
+        step_fractions = [step_fractions] if not isinstance(step_fractions, list) else step_fractions
+        _set("config.env.value.step_fraction", step_fractions)
+
+    if betas is not None:
+        betas = [betas] if not isinstance(betas, list) else betas
+        _set("config.proxy.value.beta", betas)
+
+    if learning_rates is not None:
+        learning_rates = [learning_rates] if not isinstance(learning_rates, list) else learning_rates
+        _set("config.gflownet.value.optimizer.lr", learning_rates)
+
+    if lr_z_mults is not None:
+        lr_z_mults = [lr_z_mults] if not isinstance(lr_z_mults, list) else lr_z_mults
+        _set("config.gflownet.value.optimizer.lr_z_mult", lr_z_mults)
+
+    if random_action_probs is not None:
+        random_action_probs = [random_action_probs] if not isinstance(random_action_probs, list) else random_action_probs
+        _set("config.gflownet.value.random_action_prob", random_action_probs)
+
+    if states is not None:
+        states = [states] if not isinstance(states, list) else states
+        _set("state", states)
+
+    return filters
+
+
+def fetch_wandb_runs(
+    project,
+    seeds=None,
+    step_fractions=None,
+    betas=None,
+    learning_rates=None,
+    lr_z_mults=None,
+    random_action_probs=None,
+    states=None,
+    history_samples=500,
+):
     import wandb
     api = wandb.Api()
-    runs = api.runs(project)
-    print(f"[wandb] Found {len(runs)} runs")
+
+    filters = build_wandb_filters(
+        seeds=seeds,
+        step_fractions=step_fractions,
+        betas=betas,
+        learning_rates=learning_rates,
+        lr_z_mults=lr_z_mults,
+        random_action_probs=random_action_probs,
+        states=states,
+    )
+
+    print(f"[wandb] Querying {project} with filters: {filters or '(none)'}")
+    runs = api.runs(project, filters=filters)
+    print(f"[wandb] Found {len(runs)} matching runs")
 
     out = []
-    for run in runs:
-        if run.state != "finished":
-            continue
+    for run_idx, run in enumerate(runs):
         cfg = run.config
-        sf = cfg.get("step_fraction", "unknown")
-        if sf == "unknown":
-            cache_path = cfg.get("proxy", {}).get("reward_cache_path", "")
-            if "sf" in cache_path:
+
+        # Debug: dump first run's raw config to understand the structure
+        if run_idx == 0:
+            print("[DEBUG] === Raw run.config for first run ===")
+            for k in sorted(cfg.keys()):
+                v = cfg[k]
+                if isinstance(v, dict):
+                    print(f"  cfg['{k}'] type=dict, keys={sorted(v.keys())}")
+                    if "value" in v:
+                        inner = v["value"]
+                        if isinstance(inner, dict):
+                            print(f"    cfg['{k}']['value'] type=dict, keys={sorted(inner.keys())}")
+                        else:
+                            print(f"    cfg['{k}']['value'] = {inner!r}")
+                else:
+                    print(f"  cfg['{k}'] = {v!r}")
+            print("[DEBUG] === End raw config ===")
+
+        # Robust getter: tries key directly, then via .value wrapper
+        def _v(d, key):
+            """Get key from dict d, handling optional .value nesting."""
+            if not isinstance(d, dict):
+                return None
+            # Direct access
+            if key in d:
+                val = d[key]
+                # Unwrap .value if it's a single-key dict
+                if isinstance(val, dict) and list(val.keys()) == ["value"]:
+                    return val["value"]
+                return val
+            return None
+
+        def _deep(d, *keys):
+            """Walk through nested dict with .value unwrapping at each level."""
+            for key in keys:
+                if not isinstance(d, dict):
+                    return None
+                # Try direct
+                if key in d:
+                    d = d[key]
+                # Try via .value
+                elif "value" in d:
+                    inner = d["value"]
+                    if isinstance(inner, dict) and key in inner:
+                        d = inner[key]
+                    else:
+                        return None
+                else:
+                    return None
+                # Unwrap terminal .value
+                if isinstance(d, dict) and list(d.keys()) == ["value"]:
+                    d = d["value"]
+            return d
+
+        # step_fraction
+        sf = _deep(cfg, "env", "step_fraction")
+        if sf is None or sf == "unknown":
+            sf = _deep(cfg, "step_fraction")
+        if sf is None or sf == "unknown":
+            # Last resort: parse from reward_cache_path
+            cache_path = _deep(cfg, "proxy", "reward_cache_path") or ""
+            if isinstance(cache_path, str) and "sf" in cache_path:
                 try:
                     sf = float(cache_path.split("sf")[1].split(".json")[0])
                 except (ValueError, IndexError):
-                    pass
+                    sf = "unknown"
+            else:
+                sf = "unknown"
 
-        lr = cfg.get("gflownet", {}).get("optimizer", {}).get("lr", None)
-        seed = cfg.get("seed", None)
-        beta = cfg.get("proxy", {}).get("beta", None)
-        logdir = cfg.get("logger", {}).get("logdir", {}).get("path", "")
+        lr = _deep(cfg, "gflownet", "optimizer", "lr")
+        seed = _deep(cfg, "gflownet", "seed")
+        if seed is None:
+            seed = _deep(cfg, "seed")
+        beta = _deep(cfg, "proxy", "beta")
+        lr_z_mult = _deep(cfg, "gflownet", "optimizer", "lr_z_mult")
+        random_action_prob = _deep(cfg, "gflownet", "random_action_prob")
+        if random_action_prob is None:
+            random_action_prob = _deep(cfg, "random_action_prob")
+        logdir = _deep(cfg, "logger", "logdir", "path") or ""
 
-        hist = run.history(samples=500)
+        hist = run.history(samples=history_samples)
         history = {}
         for m in WANDB_METRICS:
             if m in hist.columns:
@@ -384,13 +576,95 @@ def fetch_wandb_runs(project):
                 history[m] = {"step": vals["step"].tolist(), "value": vals[m].tolist()}
 
         out.append({
-            "id": run.id, "name": run.name,
+            "id": run.id, "name": run.name, "state": run.state,
             "step_fraction": sf, "lr": lr, "seed": seed, "beta": beta,
+            "lr_z_mult": lr_z_mult, "random_action_prob": random_action_prob,
             "logdir": logdir, "history": history,
         })
-        print(f"  {run.id}: sf={sf}, lr={lr}, seed={seed}")
+        print(f"  {run.id}: sf={sf}, lr={lr}, seed={seed}, "
+              f"lr_z_mult={lr_z_mult}, ε={random_action_prob}, state={run.state}")
 
     return out
+
+
+def download_wandb_artifacts(runs_data, project, cache_dir, alias="final"):
+    """
+    Download checkpoint artifacts from wandb for each run and build a
+    checkpoint map.
+
+    Looks for artifacts named 'ckpt-{run_id}:{alias}' (as uploaded by
+    ArtifactLogger). Falls back to ':latest' if the requested alias is
+    not found.
+
+    Parameters
+    ----------
+    runs_data : list
+        List of run dicts from fetch_wandb_runs.
+    project : str
+        wandb project path (e.g. 'parcham-udem/gfn-crop-calibration').
+    cache_dir : str
+        Local directory to download artifacts into.
+    alias : str
+        Artifact alias to download. Default: 'final'.
+
+    Returns
+    -------
+    checkpoint_map : dict
+        Mapping of sf_str → list of {path, lr, seed, wandb_id}.
+    """
+    import wandb
+    api = wandb.Api()
+
+    ckpt_map = defaultdict(list)
+    artifacts_dir = os.path.join(cache_dir, "artifacts")
+    os.makedirs(artifacts_dir, exist_ok=True)
+
+    for run in runs_data:
+        run_id = run["id"]
+        sf = str(run["step_fraction"])
+        artifact_name = f"{project}/ckpt-{run_id}"
+
+        # Try requested alias, fall back to latest
+        artifact = None
+        for try_alias in [alias, "latest"]:
+            try:
+                artifact = api.artifact(f"{artifact_name}:{try_alias}")
+                break
+            except wandb.errors.CommError:
+                continue
+
+        if artifact is None:
+            print(f"  [SKIP] {run_id}: no artifact found (tried '{alias}', 'latest')")
+            continue
+
+        # Download to a run-specific subdirectory
+        download_dir = os.path.join(artifacts_dir, run_id)
+        artifact_dir = artifact.download(root=download_dir)
+
+        # Find the .ckpt file in the downloaded directory
+        ckpt_files = [
+            f for f in os.listdir(artifact_dir) if f.endswith(".ckpt")
+        ]
+        if not ckpt_files:
+            print(f"  [SKIP] {run_id}: no .ckpt file in artifact")
+            continue
+
+        # Prefer final.ckpt, otherwise take the first one found
+        if "final.ckpt" in ckpt_files:
+            ckpt_file = "final.ckpt"
+        else:
+            ckpt_file = ckpt_files[0]
+
+        ckpt_path = os.path.join(artifact_dir, ckpt_file)
+        ckpt_map[sf].append({
+            "path": ckpt_path,
+            "lr": run.get("lr"),
+            "seed": run.get("seed"),
+            "wandb_id": run_id,
+        })
+        print(f"  [OK] {run_id}: {ckpt_path}")
+
+    return dict(ckpt_map)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -887,6 +1161,18 @@ def main():
                         help="JSON mapping sf → list of {path, lr, seed}")
     parser.add_argument("--beta", type=float, default=50.0)
     parser.add_argument("--wandb_project", default=None)
+    parser.add_argument("--wandb_seeds", nargs="+", type=int, default=None,
+                        help="Filter wandb runs by GFLOWNET.SEED values")
+    parser.add_argument("--wandb_betas", nargs="+", type=float, default=None,
+                        help="Filter wandb runs by PROXY.BETA values")
+    parser.add_argument("--wandb_lrs", nargs="+", type=float, default=None,
+                        help="Filter wandb runs by GFLOWNET.OPTIMIZER.LEARNING_RATE values")
+    parser.add_argument("--wandb_states", nargs="+", default=None,
+                        help="Filter wandb runs by state (e.g. finished running crashed). Default: all states")
+    parser.add_argument("--wandb_lr_z_mults", nargs="+", type=float, default=None,
+                        help="Filter wandb runs by GFLOWNET.OPTIMIZER.LR_Z_MULT values")
+    parser.add_argument("--wandb_random_action_probs", nargs="+", type=float, default=None,
+                        help="Filter wandb runs by GFLOWNET.RANDOM_ACTION_PROB values")
     parser.add_argument("--output_dir", default="figures")
     parser.add_argument("--cache_dir", default="cache")
     parser.add_argument("--device", default="cpu")
@@ -894,17 +1180,92 @@ def main():
     parser.add_argument("--skip_wandb", action="store_true")
     parser.add_argument("--generate_map", action="store_true",
                         help="Generate checkpoint_map.json template from wandb and exit")
+    parser.add_argument("--wandb_artifacts", action="store_true",
+                        help="Download checkpoints from wandb artifacts instead of local paths")
+    parser.add_argument("--artifact_alias", default="final",
+                        help="Artifact alias to download (default: final)")
+    parser.add_argument("--n_samples", type=int, default=None,
+                        help="Number of trajectories to sample for evaluation. "
+                             "If not set, uses exact enumeration of all 2625 states.")
+    parser.add_argument("--wandb_history_samples", type=int, default=500,
+                        help="Number of history samples to fetch per wandb run (default: 500)")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
     os.makedirs(args.cache_dir, exist_ok=True)
     assert len(args.reward_tables) == len(args.step_fractions)
 
-    # ── Optional: generate checkpoint map template ──
+    # ── Early wandb fetch (needed for checkpoint map and/or Q3) ──
+    runs_data = None
+    wandb_cache = os.path.join(args.cache_dir, "wandb_runs.json")
+    need_wandb = args.wandb_project and not args.skip_wandb
+
+    if need_wandb:
+        print("=" * 60)
+        print("STEP 0: Fetching wandb data")
+        print("=" * 60)
+        try:
+            runs_data = fetch_wandb_runs(
+                args.wandb_project,
+                seeds=args.wandb_seeds,
+                step_fractions=args.step_fractions,
+                betas=args.wandb_betas,
+                learning_rates=args.wandb_lrs,
+                lr_z_mults=args.wandb_lr_z_mults,
+                random_action_probs=args.wandb_random_action_probs,
+                states=args.wandb_states,
+                history_samples=args.wandb_history_samples,
+            )
+            with open(wandb_cache, "w") as f:
+                json.dump(runs_data, f)
+            print(f"  Cached → {wandb_cache}")
+        except Exception as e:
+            print(f"  [ERROR] wandb: {e}")
+
+    if runs_data is None and os.path.exists(wandb_cache):
+        print("  Loading cached wandb data...")
+        with open(wandb_cache) as f:
+            runs_data = json.load(f)
+    print()
+
+    # ── Auto-generate checkpoint map from wandb if not provided ──
+    if not args.checkpoint_map and not args.skip_checkpoints and runs_data:
+        if args.wandb_artifacts:
+            # Download checkpoints from wandb artifacts
+            print("=" * 60)
+            print("Downloading checkpoints from wandb artifacts")
+            print("=" * 60)
+            ckpt_map = download_wandb_artifacts(
+                runs_data, args.wandb_project, args.cache_dir,
+                alias=args.artifact_alias,
+            )
+            if ckpt_map:
+                auto_map_path = os.path.join(args.cache_dir, "checkpoint_map_artifacts.json")
+                with open(auto_map_path, "w") as f:
+                    json.dump(ckpt_map, f, indent=2)
+                args.checkpoint_map = auto_map_path
+                print(f"  Saved artifact checkpoint map → {auto_map_path}")
+            else:
+                print("  [WARN] No artifacts found. Falling back to logdir paths.")
+                auto_map_path = os.path.join(args.cache_dir, "checkpoint_map_auto.json")
+                generate_checkpoint_map_template(runs_data, auto_map_path)
+                args.checkpoint_map = auto_map_path
+        else:
+            auto_map_path = os.path.join(args.cache_dir, "checkpoint_map_auto.json")
+            print("=" * 60)
+            print("No --checkpoint_map provided — generating from wandb runs")
+            print("=" * 60)
+            generate_checkpoint_map_template(runs_data, auto_map_path)
+            args.checkpoint_map = auto_map_path
+        print()
+
+    # ── Optional: generate checkpoint map template and exit ──
     if args.generate_map:
-        assert args.wandb_project, "Need --wandb_project to generate map"
-        runs_data = fetch_wandb_runs(args.wandb_project)
-        generate_checkpoint_map_template(runs_data, "checkpoint_map.json")
+        if not runs_data:
+            assert args.wandb_project, "Need --wandb_project to generate map"
+            print("[ERROR] No wandb data available to generate map.")
+        else:
+            generate_checkpoint_map_template(runs_data, "checkpoint_map.json")
         return
 
     # ── Step 1: Ground truth ──
@@ -919,8 +1280,10 @@ def main():
     print()
 
     # ── Step 2: GFN distributions from checkpoints ──
+    eval_method = "sample" if args.n_samples else "exact"
     print("=" * 60)
-    print("STEP 2: Computing exact GFN distributions")
+    print(f"STEP 2: Computing GFN distributions ({eval_method}"
+          f"{f', n={args.n_samples}' if args.n_samples else ', all 2625 states'})")
     print("=" * 60)
 
     if not args.skip_checkpoints and args.checkpoint_map:
@@ -937,7 +1300,12 @@ def main():
                 ckpt_path = entry["path"]
                 lr = entry.get("lr")
                 seed = entry.get("seed")
-                cache_key = f"p_gfn_sf{sf}_lr{lr}_seed{seed}"
+
+                # Cache key distinguishes exact vs sampled distributions
+                if args.n_samples:
+                    cache_key = f"p_gfn_sf{sf}_lr{lr}_seed{seed}_n{args.n_samples}"
+                else:
+                    cache_key = f"p_gfn_sf{sf}_lr{lr}_seed{seed}"
                 cache_path = os.path.join(args.cache_dir, f"{cache_key}.json")
 
                 if os.path.exists(cache_path):
@@ -952,8 +1320,18 @@ def main():
                     out_dim = ckpt["forward"]["4.weight"].shape[0]
                     assert out_dim == N_ACTIONS, f"Output dim {out_dim} != {N_ACTIONS}"
                     model = build_forward_mlp(ckpt["forward"], in_dim, hid_dim, out_dim)
-                    print(f"    Enumerating 2625 states...")
-                    p_gfn = compute_exact_gfn_distribution(model, sf, args.device)
+
+                    if args.n_samples:
+                        print(f"    Sampling {args.n_samples} trajectories...")
+                        p_gfn = sample_gfn_distribution(
+                            model, sf, args.n_samples, args.device
+                        )
+                    else:
+                        print(f"    Enumerating 2625 states...")
+                        p_gfn = compute_exact_gfn_distribution(
+                            model, sf, args.device
+                        )
+
                     with open(cache_path, "w") as f:
                         json.dump(p_gfn, f)
                     print(f"    Cached → {cache_path}")
@@ -980,7 +1358,7 @@ def main():
                     })
             print(f"  sf={sf}: loaded {len(all_results[sf]['gfn_runs'])} cached runs")
     else:
-        print("  [WARN] No --checkpoint_map provided. Use --generate_map to create one.")
+        print("  [WARN] No --checkpoint_map and no wandb data. Skipping checkpoint loading.")
     print()
 
     # ── Step 3: Metrics ──
@@ -1019,29 +1397,10 @@ def main():
         figure_q2_metrics_table(valid, args.output_dir)
     print()
 
-    # ── Step 5: Q3 from wandb ──
-    runs_data = None
-    wandb_cache = os.path.join(args.cache_dir, "wandb_runs.json")
-
-    if args.wandb_project and not args.skip_wandb:
-        print("=" * 60)
-        print("STEP 5: Fetching wandb data for Q3")
-        print("=" * 60)
-        try:
-            runs_data = fetch_wandb_runs(args.wandb_project)
-            with open(wandb_cache, "w") as f:
-                json.dump(runs_data, f)
-            print(f"  Cached → {wandb_cache}")
-        except Exception as e:
-            print(f"  [ERROR] wandb: {e}")
-    if runs_data is None and os.path.exists(wandb_cache):
-        print("  Loading cached wandb data...")
-        with open(wandb_cache) as f:
-            runs_data = json.load(f)
-
+    # ── Step 5: Q3 figures (reuse wandb data from Step 0) ──
     if runs_data:
         print("=" * 60)
-        print("STEP 5b: Q3 figures")
+        print("STEP 5: Q3 figures")
         print("=" * 60)
         figure_q3_convergence(runs_data, args.output_dir)
         figure_q3_sensitivity_heatmap(runs_data, args.output_dir)

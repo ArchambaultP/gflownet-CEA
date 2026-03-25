@@ -1,0 +1,68 @@
+defaults:
+  - env: simenv
+  - gflownet: trajectorybalance
+  - loss: trajectorybalance
+  - policy: mlp_${gflownet}
+  - proxy: cropSimulation
+  - logger: wandb_artifact
+  - user: default
+  - evaluator: base
+  - buffer: base
+  - _self_
+
+# Device
+device: cuda
+# Float precision
+float_precision: 32
+# Number of objects to sample at the end of training
+n_samples: 100
+# Random seeds
+seed: 2
+random_action_prob: 0.1 # this should be higher for 2cycle
+
+# hydra:
+#   sweep:
+#     dir: ${user.logdir.root}/${oc.env:SLURM_JOB_ID,local}/multirun/${now:%Y-%m-%d_%H-%M-%S_%f}
+#     subdir: ${hydra.job.num}
+
+policy:
+  backward:
+    type: fixed
+    fixed_output: [0.0]
+
+optimizer:
+  forward: 64
+  backward_replay: 16
+
+env:
+  precomputed: True
+  step_fraction: 0.3
+
+gflownet:
+  optimizer:
+    n_train_steps: 5000
+    lr_z_mult: 1
+
+proxy:
+  beta: 50
+
+# Hydra config
+hydra:
+  # See: https://hydra.cc/docs/configure_hydra/workdir/
+  # See: https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
+  run:
+    dir: ${user.logdir.root}/${oc.env:SLURM_JOB_ID,local}/${now:%Y-%m-%d_%H-%M-%S_%f}
+  sweep:
+    dir: ${user.logdir.root}/${oc.env:SLURM_JOB_ID,local}/multirun/${now:%Y-%m-%d_%H-%M-%S_%f}
+  job:
+    # See: https://hydra.cc/docs/upgrades/1.1_to_1.2/changes_to_job_working_dir/
+    # See: https://hydra.cc/docs/tutorials/basic/running_your_app/working_directory/#disable-changing-current-working-dir-to-jobs-output-dir
+    chdir: False
+  sweeper:
+    params:
+      seed: 0, 1
+      proxy.beta: 5, 10, 15
+      env.step_fraction: 0.15, 0.3
+      gflownet.optimizer.lr_z_mult: 1
+      gflownet.optimizer.lr: 1e-3
+      random_action_prob: 0.2
