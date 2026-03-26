@@ -1,10 +1,10 @@
 defaults:
   - env: simenv
-  - gflownet: trajectorybalance
-  - loss: trajectorybalance
+  - gflownet: flowmatch
+  - loss: flowmatching
   - policy: mlp_${gflownet}
   - proxy: cropSimulation
-  - logger: wandb_artifact
+  - logger: base
   - user: default
   - evaluator: base
   - buffer: base

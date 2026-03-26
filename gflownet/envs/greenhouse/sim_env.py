@@ -6,11 +6,13 @@ from gflownet.utils.common import tfloat
 from torch import float32
 from gflownet.envs.greenhouse.constants import GROUPS, BASELINE_PARAMETERS, GROUP_ORDER, PERTURBATION_SCHEME, PARAMETER_BOUNDS, INITIAL_CONDITIONS
 import numpy as np
+import torch
 
 class CropSimEnv(FMUEnv):
 
     def __init__(self, n_cycles=1, step_fraction=0.2, decay_factor=0.5, fmu_path = 'fmu/FMU/tomato.fmu',device="CUDA", precomputed=False, **kwargs):
         self.source = [()]
+        self.eos = -1
         self.group2id = {g: i for i, g in enumerate(GROUP_ORDER)}
         self.id2group = {i: g for g, i in self.group2id.items()}
         self.pert2id = {p: i for i, p in enumerate(sorted({p for group in PERTURBATION_SCHEME.values() for p in group.keys()}))}
@@ -23,6 +25,7 @@ class CropSimEnv(FMUEnv):
         self.step_fraction = step_fraction
         self.decay_factor = decay_factor
         self.precomputed = precomputed
+
         super().__init__(fmu_path=fmu_path,device=device, **kwargs)
 
 
@@ -77,6 +80,7 @@ class CropSimEnv(FMUEnv):
             { group_name: [pert1, pert2, ...], ... }
         """
         action_space = list(self.id2pert.keys())
+        action_space.append(self.eos)
         return action_space
     
     def get_action_space(self):
@@ -291,3 +295,24 @@ class CropSimEnv(FMUEnv):
 
         return mask
     
+    def get_parents(self, state=None, done=None, action=None):
+        state = self._get_state(state)
+        done = self._get_done(done)
+
+        # Source state → no parents
+        if state == [()] or len(state) <= 1:
+            return [], []
+
+        # Parent is the state without the last step
+        parent_state = state[:-1]
+
+        # Action that led here is the perturbation ID from the last step
+        last_pert = state[-1][2]
+
+        return [parent_state], [last_pert]
+    
+    def actions2indices(self, actions):
+        """Convert action ints to indices into the policy output."""
+        if torch.is_tensor(actions):
+            return actions.long()
+        return torch.tensor(actions, dtype=torch.long, device=self.device)
