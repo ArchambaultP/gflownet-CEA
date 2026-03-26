@@ -1,7 +1,7 @@
 """Batch evaluation of many parameter configs with Huber-aware losses.
 
 Used by compute_states to evaluate thousands of terminal states.
-Each subprocess handles one (config, team) pair â€” no reset() needed.
+Each subprocess handles one (config, team) pair — no reset() needed.
 
 Main additions over the original batch.py:
 - supports huber_relative / rse / absolute_relative

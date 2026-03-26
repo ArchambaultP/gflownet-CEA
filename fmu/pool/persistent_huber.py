@@ -14,9 +14,9 @@ from fmu.pool.protocol import send, recv_timeout
 _PERSISTENT_WORKER = r'''
 import sys, os, pickle, struct, traceback, signal, select, time
 
-# ────── Protect the protocol pipe from FMU C-level stdout writes ──────
+# ── Protect the protocol pipe from FMU C-level stdout writes ──
 _PROTO_FD = os.dup(sys.stdout.fileno())   # copy of real stdout
-os.dup2(sys.stderr.fileno(), 1)           # fd 1 now â†’ stderr
+os.dup2(sys.stderr.fileno(), 1)           # fd 1 now → stderr
 _proto_out = os.fdopen(_PROTO_FD, 'wb', buffering=0)
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
@@ -39,7 +39,7 @@ relative_floor_abs = float(sys.argv[9])
 from gflownet.envs.greenhouse.constants import BASELINE_PARAMETERS, INITIAL_CONDITIONS
 from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
 
-# ────── Expensive one-time setup (survives child segfaults) ──────
+# ── Expensive one-time setup (survives child segfaults) ──
 team_data = CropSimulatorProxy.get_team_obs_dataset(data_dir, team)
 input_trace = CropSimulatorProxy.compute_trace(
     CropSimulatorProxy.get_team_control_dataset(data_dir, team), delta='30min')

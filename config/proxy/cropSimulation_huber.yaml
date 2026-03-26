@@ -1,0 +1,25 @@
+
+defaults:
+  - base
+
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy.CropSimulatorProxy
+
+reward_cache_path: precomputed/reward_table_sf${env.step_fraction}.json
+cache_save_every: 100
+
+# Reward transform:
+#   softmin  -> R(x) = exp(-beta * L(x))
+#   invpower -> R(x) = (1 / max(L(x), reward_eps)) ** beta
+reward_transform: softmin
+beta: 10
+reward_eps: 1e-8
+reward_clip_min: 1e-12
+
+# Loss:
+#   huber_relative -> Huber on stabilized relative residuals
+#   rse            -> legacy squared relative error
+#   absolute_relative -> stabilized absolute relative error
+loss_type: huber_relative
+huber_delta: 1.0
+relative_floor_frac: 0.05
+relative_floor_abs: 1e-6
