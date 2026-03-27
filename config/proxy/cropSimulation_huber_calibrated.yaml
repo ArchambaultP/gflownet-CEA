@@ -1,0 +1,28 @@
+defaults:
+  - base
+
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy.CropSimulatorProxy
+
+reward_cache_path: precomputed/reward_table_sf${env.step_fraction}.json
+cache_save_every: 100
+
+# Reward transform and calibration
+reward_transform: softmin
+beta: 4.0               # used directly when beta_mode=fixed; fallback otherwise
+beta_mode: auto_contrast
+beta_target_ratio: 20.0 # makes q10 states ~20x more likely than q90 states after loss normalization
+reward_eps: 1e-8
+reward_clip_min: 1e-12
+
+# Normalize the scalar loss before exponentiating.
+# q10q90 -> reward_loss = (loss - q10) / (q90 - q10)
+loss_norm: q10q90
+loss_norm_low_q: 0.10
+loss_norm_high_q: 0.90
+loss_norm_eps: 1e-8
+
+# Robust pointwise loss
+loss_type: huber_relative
+huber_delta: 0.9
+relative_floor_frac: 0.05
+relative_floor_abs: 1e-6
