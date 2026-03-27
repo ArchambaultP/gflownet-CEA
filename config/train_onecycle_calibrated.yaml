@@ -55,5 +55,5 @@ hydra:
     params:
       seed: 0
       gflownet.optimizer.lr_z_mult: 1
-      gflownet.optimizer.lr: 1e-3,5e-4
-      gflownet.random_action_prob: 0.1, 0.2, 0.5
+      gflownet.optimizer.lr: 1e-3
+      gflownet.random_action_prob: 0.2, 0.5
