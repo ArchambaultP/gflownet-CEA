@@ -64,6 +64,32 @@ class CropSimEnv(FMUEnv):
         self.decay_factor = decay_factor
         self.precomputed = precomputed
 
+        self.n_operations = self.n_groups * self.n_cycles
+
+        # For each slot in the trajectory, which group does it correspond to?
+        self.slot_group_ids = [i % self.n_groups for i in range(self.n_operations)]
+
+        # For each slot, the valid action ids for that slot's group
+        self.slot_action_ids = []
+        self.slot_action_pos = []
+        for group_id in self.slot_group_ids:
+            action_ids = [
+                self.pert2id[p]
+                for p in PERTURBATION_SCHEME[self.id2group[group_id]].keys()
+            ]
+            self.slot_action_ids.append(action_ids)
+            self.slot_action_pos.append({a: j for j, a in enumerate(action_ids)})
+
+        # One-hot for depth 0..n_operations
+        self.depth_dim = self.n_operations + 1
+
+        # Each slot gets (num_valid_actions_for_that_group + 1) dims
+        # The last position is the "unset" bit
+        self.history_dim = sum(len(aids) + 1 for aids in self.slot_action_ids)
+
+        # Optional: useful for debugging
+        self.policy_input_dim = 1 + self.depth_dim + self.history_dim + self.n_params
+
         super().__init__(fmu_path=fmu_path, device=device, **kwargs)
 
     def _apply_perturbation(self, step_fraction, group_name, perturb_name, values=None):
@@ -160,32 +186,54 @@ class CropSimEnv(FMUEnv):
             parts.append(self.id2pert[perturb_id])
         return "|".join(parts)
 
-    def states2policy(
-        self, states: Union[List, TensorType["batch", "state_dim"]]
-    ) -> TensorType["batch", "policy_input_dim"]:
-        """
-        policy vector contains:
-        [0]: step number
-        [1]: step_fraction
-        [2..2+n_operations): perturbation ids
-        [..]: normalized parameter vector
-        """
+    def states2policy(self, states: Union[List, TensorType["batch", "state_dim"]]):
         out = []
+
         for state in states:
-            n_operations = self._total_decisions()
-            vec = [-1.0] * (2 + n_operations + self.n_params)
-            step = 1
-            for i, s in enumerate(state, start=1):
-                if s == ():
-                    continue
-                cycle, _, pert_id = s
-                vec[i] = pert_id
-                step += 1
-            vec[1] = self.step_fraction
-            vec[0] = step
+            state = self._get_state(state)
+            decisions = state[1:] if state != [()] else []
+            depth = len(decisions)
+
+            # 1 scalar for step_fraction
+            # depth one-hot
+            # slot-wise history one-hot
+            # normalized parameter vector
+            vec = [0.0] * self.policy_input_dim
+
+            cursor = 0
+
+            # 1) step fraction
+            vec[cursor] = float(self.step_fraction)
+            cursor += 1
+
+            # 2) depth one-hot
+            vec[cursor + depth] = 1.0
+            cursor += self.depth_dim
+
+            # 3) slot-wise one-hot history
+            for slot_idx in range(self.n_operations):
+                valid_action_ids = self.slot_action_ids[slot_idx]
+                local_pos = self.slot_action_pos[slot_idx]
+                block_size = len(valid_action_ids) + 1  # +1 for "unset"
+
+                block = [0.0] * block_size
+
+                if slot_idx < depth:
+                    chosen_action = decisions[slot_idx][2]
+                    block[local_pos[chosen_action]] = 1.0
+                else:
+                    # unset
+                    block[-1] = 1.0
+
+                vec[cursor : cursor + block_size] = block
+                cursor += block_size
+
+            # 4) normalized parameter vector
             param_set = self.build_config(state, normalize=True)
-            vec[2 + n_operations :] = param_set
+            vec[cursor : cursor + self.n_params] = param_set
+
             out.append(vec)
+
         return tfloat(out, float_type=float32, device=self.device)
 
     def states2proxy(self, states):
