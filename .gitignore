@@ -17,3 +17,4 @@ playground/
 docs/_build/
 logs
 /wandb
+/figures
