@@ -189,7 +189,10 @@ def evaluate_all(
     work = [("|".join(combo), params) for combo, params in states.items()]
     jobs = [(key, params, team) for key, params in work for team in team_ids]
 
-    tmp_dir = tempfile.mkdtemp(prefix="batch_eval_")
+    temp_root = temp_root or os.environ.get('BATCH_EVAL_TMPDIR')
+    if temp_root:
+        os.makedirs(temp_root, exist_ok=True)
+
     total_done = 0
 
     team_point_losses: Dict[str, Dict[str, List[float]]] = {}
@@ -199,15 +202,17 @@ def evaluate_all(
     abs_e_by_team: Dict[str, List[float]] = {team: [] for team in team_ids}
     floors_by_team: Dict[str, Dict[str, float]] = {}
 
-    try:
+    with tempfile.TemporaryDirectory(prefix="batch_eval_", dir=temp_root) as tmp_dir:
         for wave_start in range(0, len(jobs), n_workers):
             wave = jobs[wave_start:wave_start + n_workers]
             procs = []
+            wave_files = []
 
             for i, (key, params, team) in enumerate(wave):
                 idx = wave_start + i
                 args_file = os.path.join(tmp_dir, f"args_{idx}.pkl")
                 result_file = os.path.join(tmp_dir, f"result_{idx}.pkl")
+                wave_files.extend([args_file, result_file])
                 with open(args_file, 'wb') as f:
                     pickle.dump(
                         (
@@ -232,6 +237,7 @@ def evaluate_all(
                         "MKL_NUM_THREADS": "1",
                         "OMP_NUM_THREADS": "1",
                         "PYTHONPATH": os.pathsep.join(sys.path),
+                        **({"TMPDIR": temp_root} if temp_root else {}),
                     },
                     cwd=os.getcwd(),
                 )
@@ -267,6 +273,13 @@ def evaluate_all(
                 except Exception:
                     pass
 
+            for fp in wave_files:
+                try:
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                except OSError:
+                    pass
+
             if verbose:
                 print(f"  {total_done}/{len(jobs)} team evaluations done")
 
@@ -290,5 +303,3 @@ def evaluate_all(
             'num_expected_team_jobs': int(len(jobs)),
         }
         return losses, details
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
