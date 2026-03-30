@@ -15,18 +15,43 @@ from data.greenhouse.secondEdition.extract import (
 )
 
 
+def _maybe_float(x, name: str):
+    if x is None:
+        return None
+    if isinstance(x, (int, float, np.floating)):
+        return float(x)
+    if isinstance(x, str):
+        s = x.strip()
+        if s == "" or s.lower() in {"none", "null"}:
+            return None
+        try:
+            return float(s)
+        except ValueError as e:
+            raise ValueError(
+                f"{name} must be numeric or null, got {x!r}. "
+                f"If you copied a placeholder like '<anchor from calibration>', "
+                f"replace it with a real number or remove the field."
+            ) from e
+    raise TypeError(f"{name} must be numeric or null, got type {type(x).__name__}")
+
+
 class CropSimulatorProxy(Proxy):
     """
     Crop simulator proxy with thresholded reward support.
 
-    The proxy still caches / evaluates *loss*.
-    Reward is derived on-the-fly from loss using either:
-      - softmin:        exp(-beta * loss_norm)
-      - thresholded:    eps + (1 - eps) * sigmoid((tau - loss_norm) / T)
+    Reward modes
+    ------------
+    - softmin:
+        reward = exp(-beta * loss_norm)
 
-    For consistency across 1-cycle and 2-cycle, if you use thresholded reward,
-    you should ideally freeze anchor/scale/tau from your enumerable 1-cycle
-    calibration and reuse them for 2-cycle.
+    - thresholded_sigmoid:
+        s = sigmoid((tau - loss_norm) / T)
+        reward = eps + (1 - eps) * s**beta
+
+      Here beta acts as a power-law sharpening parameter on top of the
+      thresholded reward. beta=1 leaves the plain thresholded reward unchanged.
+      beta>1 emphasizes the very best states inside the good region.
+      beta<1 broadens the reward inside the good region.
     """
 
     def __init__(
@@ -57,16 +82,20 @@ class CropSimulatorProxy(Proxy):
         self.step_size = 120.0
         self.parameter_names = sorted(BASELINE_PARAMETERS.keys())
 
-        self.reward_mode = reward_mode
-        self.beta = beta if beta is not None else 3.0
+        self.reward_mode = str(reward_mode)
 
-        self.loss_norm = loss_norm
+        beta_val = _maybe_float(beta, "beta")
+        if beta_val is None:
+            beta_val = 3.0 if self.reward_mode == "softmin" else 1.0
+        self.beta = float(beta_val)
+
+        self.loss_norm = str(loss_norm)
         self.q_low = float(q_low)
         self.q_high = float(q_high)
 
-        self.reward_anchor = reward_anchor
-        self.reward_scale = reward_scale
-        self.reward_tau = reward_tau
+        self.reward_anchor = _maybe_float(reward_anchor, "reward_anchor")
+        self.reward_scale = _maybe_float(reward_scale, "reward_scale")
+        self.reward_tau = _maybe_float(reward_tau, "reward_tau")
         self.tau_quantile = float(tau_quantile)
         self.threshold_temperature = float(threshold_temperature)
         self.reward_epsilon = float(reward_epsilon)
@@ -75,7 +104,7 @@ class CropSimulatorProxy(Proxy):
         self.cache_hits = 0
         self.cache_misses = 0
         self.cache_new = 0
-        self.cache_save_every = cache_save_every
+        self.cache_save_every = int(cache_save_every)
         self.reward_cache_path = reward_cache_path
 
         if reward_cache_path and os.path.exists(reward_cache_path):
@@ -167,7 +196,7 @@ class CropSimulatorProxy(Proxy):
                 "[reward calibration] "
                 f"mode={self.reward_mode}, anchor={self.reward_anchor:.6g}, "
                 f"scale={self.reward_scale:.6g}, tau={self.reward_tau:.6g}, "
-                f"T={self.threshold_temperature}, eps={self.reward_epsilon}"
+                f"T={self.threshold_temperature}, eps={self.reward_epsilon}, beta={self.beta}"
             )
         elif self.reward_mode == "softmin":
             print(
@@ -201,7 +230,8 @@ class CropSimulatorProxy(Proxy):
                     "Provide it explicitly or load a cache so it can be inferred."
                 )
             z = (float(self.reward_tau) - loss_normed) / max(float(self.threshold_temperature), 1e-12)
-            reward = float(self.reward_epsilon + (1.0 - self.reward_epsilon) * self._sigmoid(z))
+            s = float(self._sigmoid(z))
+            reward = float(self.reward_epsilon + (1.0 - self.reward_epsilon) * (s ** self.beta))
 
         else:
             raise ValueError(f"Unsupported reward_mode: {self.reward_mode}")
