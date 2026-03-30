@@ -34,15 +34,12 @@ gflownet:
     lr_z_mult: 1
 
 proxy:
-  reward_transform: softmin
-  loss_type: huber_relative
-  huber_delta: 0.9
-  relative_floor_frac: 0.05
-  relative_floor_abs: 1e-6
   loss_norm: q10q90
-  beta_mode: fixed
-  beta: 2.995732273553991
-  beta_target_ratio: 20
+  q_low: 0.10
+  q_high: 0.90
+  tau_quantile: 0.05
+  threshold_temperature: 0.05
+  reward_epsilon: 1e-3
 
 hydra:
   run:
