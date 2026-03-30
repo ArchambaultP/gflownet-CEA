@@ -43,6 +43,7 @@ proxy:
   tau_quantile: 0.05
   threshold_temperature: 0.05
   reward_epsilon: 1e-3
+  beta: 1
 
 hydra:
   run:
@@ -58,5 +59,6 @@ hydra:
       gflownet.optimizer.lr: 5e-4
       gflownet.random_action_prob: 0.2
       proxy.tau_quantile: 0.10
-      proxy.threshold_temperature: 0.15
-      proxy.reward_cache_path: precomputed/reward_table_sf0.15_thresholded_q10_T015.json
+      proxy.threshold_temperature: 0.08
+      proxy.beta: 2
+        #      proxy.reward_cache_path: precomputed/reward_table_sf0.15_thresholded_q10_T015.json
