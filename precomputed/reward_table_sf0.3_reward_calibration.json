@@ -1,0 +1,37 @@
+{
+  "reward_transform": "softmin",
+  "loss_norm": "q10q90",
+  "loss_norm_low_q": 0.1,
+  "loss_norm_high_q": 0.9,
+  "loss_norm_eps": 1e-08,
+  "beta": 2.995732273553991,
+  "beta_mode": "auto_contrast",
+  "beta_target_ratio": 20.0,
+  "normalization": {
+    "mode": "q10q90",
+    "low_q": 0.1,
+    "high_q": 0.9,
+    "eps": 1e-08,
+    "count": 2625,
+    "loss_min": 0.3494158580219479,
+    "loss_max": 1.5727813026872342,
+    "loss_mean": 0.5318010935292096,
+    "loss_std": 0.1950221811513698,
+    "anchor": 0.406404519259954,
+    "scale": 0.3156245614577978,
+    "q_low": 0.406404519259954,
+    "q_high": 0.7220290807177518
+  },
+  "beta_meta": {
+    "beta_mode": "auto_contrast",
+    "beta_input": 10.0,
+    "beta_target_ratio": 20.0,
+    "reward_transform": "softmin",
+    "beta_reason": "quantile_contrast",
+    "loss_low": 0.406404519259954,
+    "loss_high": 0.7220290807177518,
+    "reward_loss_low": 0.0,
+    "reward_loss_high": 1.0,
+    "contrast_gap": 1.0
+  }
+}
