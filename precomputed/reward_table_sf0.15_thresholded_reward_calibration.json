@@ -1,0 +1,16 @@
+{
+  "reward_family": "thresholded_sigmoid",
+  "loss_norm": "q10q90",
+  "anchor": 0.39254501806115666,
+  "scale": 0.08137514216255737,
+  "q_low": 0.1,
+  "q_high": 0.9,
+  "tau_quantile": 0.05,
+  "tau": -0.0703780990481681,
+  "temperature": 0.05,
+  "epsilon": 0.001,
+  "top1_prob": 0.005687645637308381,
+  "top10_mass": 0.05530191838853052,
+  "top20_mass": 0.10795335176174786,
+  "effective_support": 318.6284670177612
+}

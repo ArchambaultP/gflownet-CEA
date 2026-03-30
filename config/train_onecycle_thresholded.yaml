@@ -1,0 +1,59 @@
+defaults:
+  - env: simenv
+  - gflownet: trajectorybalance
+  - loss: trajectorybalance
+  - policy: mlp_${gflownet}
+  - proxy: cropSimulation_thresholded
+  - logger: wandb_artifact
+  - user: default
+  - evaluator: base
+  - buffer: base
+  - _self_
+
+device: cuda
+float_precision: 32
+n_samples: 100
+seed: 0
+
+policy:
+  backward:
+    type: fixed
+    fixed_output: [0.0]
+
+optimizer:
+  forward: 16
+  backward_replay: 16
+
+env:
+  precomputed: True
+  step_fraction: 0.15
+
+gflownet:
+  optimizer:
+    n_train_steps: 1000
+    lr_z_mult: 1
+
+proxy:
+  reward_transform: softmin
+  loss_type: huber_relative
+  huber_delta: 0.9
+  relative_floor_frac: 0.05
+  relative_floor_abs: 1e-6
+  loss_norm: q10q90
+  beta_mode: fixed
+  beta: 2.995732273553991
+  beta_target_ratio: 20
+
+hydra:
+  run:
+    dir: ${user.logdir.root}/${oc.env:SLURM_JOB_ID,local}/${now:%Y-%m-%d_%H-%M-%S_%f}
+  sweep:
+    dir: ${user.logdir.root}/${oc.env:SLURM_JOB_ID,local}/multirun/${now:%Y-%m-%d_%H-%M-%S_%f}
+  job:
+    chdir: False
+  sweeper:
+    params:
+      seed: 0
+      gflownet.optimizer.lr_z_mult: 1
+      gflownet.optimizer.lr: 1e-3
+      gflownet.random_action_prob: 0.2, 0.5

@@ -1,0 +1,24 @@
+# gflownet/proxy/cropSimulation_thresholded.yaml
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_thresholded.CropSimulatorProxy
+
+device: ${device}
+float_precision: ${float_precision}
+
+# point this to the rewritten thresholded table
+reward_cache_path: precomputed/reward_table_sf0.15_thresholded.json
+
+# reward definition
+reward_mode: thresholded_sigmoid
+loss_norm: q10q90
+q_low: 0.10
+q_high: 0.90
+tau_quantile: 0.05
+threshold_temperature: 0.05
+reward_epsilon: 1e-3
+
+# reward_anchor: <anchor from *_reward_calibration.json>
+# reward_scale: <scale from *_reward_calibration.json>
+# reward_tau: <tau from *_reward_calibration.json>
+
+# cache behavior
+cache_save_every: 100
