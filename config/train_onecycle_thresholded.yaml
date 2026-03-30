@@ -16,6 +16,9 @@ n_samples: 100
 seed: 0
 
 policy:
+  forward:
+    n_hid: 256
+    n_layers: 3
   backward:
     type: fixed
     fixed_output: [0.0]
@@ -52,5 +55,8 @@ hydra:
     params:
       seed: 0
       gflownet.optimizer.lr_z_mult: 1
-      gflownet.optimizer.lr: 1e-3
-      gflownet.random_action_prob: 0.2, 0.5
+      gflownet.optimizer.lr: 5e-4
+      gflownet.random_action_prob: 0.2
+      proxy.tau_quantile: 0.10
+      proxy.threshold_temperature: 0.15
+      proxy.reward_cache_path: precomputed/reward_table_sf0.15_thresholded_q10_T015.json
