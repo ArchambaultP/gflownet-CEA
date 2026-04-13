@@ -1,0 +1,56 @@
+{
+  "n_seeds": 3,
+  "fmu_path": "/Tmp/archampa/gflownet-CEA/fmu/FMU/tomato.fmu",
+  "data_dir": "/Tmp/archampa/gflownet-CEA/data/greenhouse/secondEdition",
+  "n_cycles": 2,
+  "step_fraction": 0.15,
+  "decay_factor": 0.5,
+  "train_budget": 5000,
+  "post_train_budget": 100,
+  "total_budget_for_tpe_and_random": 5100,
+  "n_unique_states_requested": 19990,
+  "n_states_loaded_from_cache": 0,
+  "n_new_states_evaluated": 19990,
+  "cache_path": "paper_rq3_outputs/2cycle_sf0.15/evaluated_state_losses_cache.csv",
+  "summary_rows": [
+    {
+      "Method": "TPE",
+      "Best final loss mean": 0.2975636953276965,
+      "Best final loss std": 0.0027602478386661595,
+      "Mean sampled loss mean": 0.33283037514957675,
+      "Mean sampled loss std": 0.001958664836483689,
+      "Median sampled loss mean": 0.31198964607891555,
+      "Median sampled loss std": 0.0003948115844529664,
+      "Unique states mean": 1531.0,
+      "Unique states std": 183.31575673320248,
+      "Mean pairwise Hamming mean": 5.367458054727045,
+      "Mean pairwise Hamming std": 0.3567397460172415
+    },
+    {
+      "Method": "GFN",
+      "Best final loss mean": 0.3116733060692833,
+      "Best final loss std": 0.0033691096865607496,
+      "Mean sampled loss mean": 0.43048917137245013,
+      "Mean sampled loss std": 0.006790888337449999,
+      "Median sampled loss mean": 0.44405132977508294,
+      "Median sampled loss std": 0.0060616529589993485,
+      "Unique states mean": 100.0,
+      "Unique states std": 0.0,
+      "Mean pairwise Hamming mean": 6.356094276094276,
+      "Mean pairwise Hamming std": 0.05111319603773373
+    },
+    {
+      "Method": "Random",
+      "Best final loss mean": 0.2995323429315122,
+      "Best final loss std": 0.002750282005985892,
+      "Mean sampled loss mean": 0.4400530458975551,
+      "Mean sampled loss std": 0.00033648235340169656,
+      "Median sampled loss mean": 0.4487633959942296,
+      "Median sampled loss std": 0.0005297267654153423,
+      "Unique states mean": 5096.333333333333,
+      "Unique states std": 0.4714045207910317,
+      "Mean pairwise Hamming mean": 7.847624396302052,
+      "Mean pairwise Hamming std": 3.375609326185593e-05
+    }
+  ]
+}
