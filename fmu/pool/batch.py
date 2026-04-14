@@ -86,9 +86,10 @@ def _point_loss(e, loss_type, huber_delta):
 
 
 team_data = CropSimulatorProxy.get_team_obs_dataset(data_dir, team)
-input_trace = CropSimulatorProxy.compute_trace(
-    CropSimulatorProxy.get_team_control_dataset(data_dir, team), delta='30min')
-setpoints = (team_data.index - team_data.index.min())[1:].total_seconds().tolist()
+ctrl_data = CropSimulatorProxy.get_team_control_dataset(data_dir, team)
+climate_start = ctrl_data.index.min()
+input_trace = CropSimulatorProxy.compute_trace(ctrl_data, delta='30min')
+setpoints = (team_data.index - climate_start).total_seconds().tolist()
 
 init = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **params}
 controller = TomatoController(
@@ -189,7 +190,7 @@ def evaluate_all(
     work = [("|".join(combo), params) for combo, params in states.items()]
     jobs = [(key, params, team) for key, params in work for team in team_ids]
 
-    temp_root = temp_root or os.environ.get('BATCH_EVAL_TMPDIR')
+    temp_root = os.environ.get('BATCH_EVAL_TMPDIR')
     if temp_root:
         os.makedirs(temp_root, exist_ok=True)
 
