@@ -1,0 +1,108 @@
+{
+  "n_seeds": 3,
+  "n_cycles": 2,
+  "step_fraction": 0.15,
+  "decay_factor": 0.5,
+  "retrieval_budget": 100,
+  "train_budget": 5000,
+  "beta": 1.0,
+  "total_budget": 5100,
+  "diversity_top_k": 20,
+  "top_loss_k": 10,
+  "fmu_path": "/Tmp/archampa/gflownet-CEA/fmu/FMU/tomato.fmu",
+  "data_dir": "/Tmp/archampa/gflownet-CEA/data/greenhouse/secondEdition",
+  "n_unique_states_requested": 20294,
+  "n_states_loaded_from_cache": 0,
+  "n_new_states_evaluated": 20294,
+  "cache_path": "paper_rq3_outputs/2cycle_sf0.15_budget100_train5000_beta1.0/evaluated_state_losses_cache_beta1.0.csv",
+  "best_state_keys_equal": {
+    "TPE": "increase|none|widen_optimum|increase|higher_resp_cost|increase|higher_sensitivity|shift_warm|increase|more_fruit_growth",
+    "GFN": "decrease|increase|widen_optimum|increase|more_fruit_growth|increase|increase|widen_optimum|increase|higher_sensitivity",
+    "Random": "none|lower_sensitivity|widen_optimum|increase|higher_resp_cost|none|none|widen_optimum|increase|more_fruit_growth"
+  },
+  "best_state_keys_total": {
+    "TPE": "none|increase|widen_optimum|increase|higher_resp_cost|none|increase|widen_optimum|increase|more_fruit_growth",
+    "GFN": "decrease|increase|widen_optimum|increase|more_fruit_growth|increase|increase|widen_optimum|increase|higher_sensitivity",
+    "Random": "none|decrease|widen_optimum|increase|lower_sensitivity|none|higher_sensitivity|shift_warm|increase|more_fruit_growth"
+  },
+  "best_state_losses_equal": {
+    "TPE": 0.30487492448069753,
+    "GFN": 0.3101920619039789,
+    "Random": 0.2972186280015608
+  },
+  "best_state_losses_total": {
+    "TPE": 0.2955614195324872,
+    "GFN": 0.3101920619039789,
+    "Random": 0.3017740872734749
+  },
+  "equal_summary_rows": [
+    {
+      "Method": "TPE",
+      "Best final loss mean": 0.3081200731884529,
+      "Best final loss std": 0.002533734336575621,
+      "Median top-loss-k mean": 0.3148850318661779,
+      "Median top-loss-k std": 0.0024133218126858123,
+      "Unique states mean": 72.66666666666667,
+      "Unique states std": 1.699673171197595,
+      "Mean Hamming top-unique mean": 4.0929824561403505,
+      "Mean Hamming top-unique std": 0.1910428847416287
+    },
+    {
+      "Method": "GFN",
+      "Best final loss mean": 0.31595180271709816,
+      "Best final loss std": 0.004803997781039726,
+      "Median top-loss-k mean": 0.3338560829516843,
+      "Median top-loss-k std": 0.002826253239843878,
+      "Unique states mean": 100.0,
+      "Unique states std": 0.0,
+      "Mean Hamming top-unique mean": 5.787719298245615,
+      "Mean Hamming top-unique std": 0.1888064926292841
+    },
+    {
+      "Method": "Random",
+      "Best final loss mean": 0.3157206163909642,
+      "Best final loss std": 0.014497211665514063,
+      "Median top-loss-k mean": 0.3556663833086904,
+      "Median top-loss-k std": 0.007681281416680399,
+      "Unique states mean": 100.0,
+      "Unique states std": 0.0,
+      "Mean Hamming top-unique mean": 7.550877192982456,
+      "Mean Hamming top-unique std": 0.14776471360874072
+    }
+  ],
+  "total_summary_rows": [
+    {
+      "Method": "TPE",
+      "Best final loss mean": 0.2975636953276965,
+      "Best final loss std": 0.0027602478386661595,
+      "Median top-loss-k mean": 0.29850168415332895,
+      "Median top-loss-k std": 0.003186313132244631,
+      "Unique states mean": 1531.0,
+      "Unique states std": 183.31575673320248,
+      "Mean Hamming top-unique mean": 2.573684210526316,
+      "Mean Hamming top-unique std": 0.4938027763207936
+    },
+    {
+      "Method": "GFN",
+      "Best final loss mean": 0.31595180271709816,
+      "Best final loss std": 0.004803997781039726,
+      "Median top-loss-k mean": 0.3338560829516843,
+      "Median top-loss-k std": 0.002826253239843878,
+      "Unique states mean": 100.0,
+      "Unique states std": 0.0,
+      "Mean Hamming top-unique mean": 5.787719298245615,
+      "Mean Hamming top-unique std": 0.1888064926292841
+    },
+    {
+      "Method": "Random",
+      "Best final loss mean": 0.30315817645215887,
+      "Best final loss std": 0.0010267773789445146,
+      "Median top-loss-k mean": 0.3081943521655201,
+      "Median top-loss-k std": 0.0013354055678033417,
+      "Unique states mean": 5098.666666666667,
+      "Unique states std": 1.247219128924647,
+      "Mean Hamming top-unique mean": 6.043859649122807,
+      "Mean Hamming top-unique std": 0.08292141963576492
+    }
+  ]
+}
