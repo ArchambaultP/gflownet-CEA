@@ -1,19 +1,37 @@
 #!/usr/bin/env python3
 """
-Optuna / TPE baseline over the same grouped discrete perturbation space as the GFN,
-with cache-first evaluation and simple sweep support.
+Optuna / TPE over the same grouped discrete perturbation space as the GFN,
+with cache-first evaluation and built-in sweep support over:
+- beta
+- tau_quantile
+- threshold_temperature
+- seed
 
-What this does:
-- Uses the same grouped discrete action space as the GFN.
-- Uses the JSON cache as the source of truth for LOSS.
-- Recomputes reward explicitly from stored loss for every config.
-- On a cache miss, evaluates the state live once through CropSimulatorProxy,
-  then writes the new LOSS back into the JSON cache.
-- Supports sweeping beta / tau_quantile / threshold_temperature in one file.
+Behavior:
+- Source of truth is scalar LOSS stored in the JSON cache at --reward_cache_path
+- Reward is ALWAYS recomputed explicitly from stored loss
+- On a cache miss, evaluate live once through CropSimulatorProxy, then write the
+  new LOSS back into the main JSON cache
+- The live proxy uses a separate internal cache file by default, so it does not
+  conflict with the main state_key cache
 
-Important:
-- The cache file is shared across sweep members.
-- The cache stores only params + loss. It does NOT store config-dependent reward.
+Example:
+python tpe_optimization.py \
+  --reward_cache_path precomputed/reward_table_sf0.15.json \
+  --step_fraction 0.15 \
+  --n_cycles 1 \
+  --decay_factor 0.5 \
+  --n_trials 100 \
+  --reward_mode thresholded_sigmoid \
+  --loss_norm q10q90 \
+  --q_low 0.10 \
+  --q_high 0.90 \
+  --tau_quantile 0.05 \
+  --threshold_temperature 0.04 \
+  --betas 1 4 8 \
+  --seeds 0 1 2 \
+  --reward_epsilon 1e-3 \
+  --wandb_group tpe_beta_seed_sweep_sf015
 """
 
 from __future__ import annotations
@@ -23,6 +41,7 @@ import atexit
 import copy
 import itertools
 import json
+import random
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -208,6 +227,16 @@ class BOBaseline:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         self.cache = self._load_cache(self.cache_path)
 
+        # The live proxy uses a separate internal cache file to avoid conflicts with
+        # the main state_key JSON cache format.
+        if args.proxy_reward_cache_path is None:
+            stem = self.cache_path.stem
+            suffix = self.cache_path.suffix or ".json"
+            self.proxy_cache_path = self.cache_path.with_name(f"{stem}_live_proxy_cache{suffix}")
+        else:
+            self.proxy_cache_path = Path(args.proxy_reward_cache_path)
+            self.proxy_cache_path.parent.mkdir(parents=True, exist_ok=True)
+
         self.proxy: Optional[CropSimulatorProxy] = None  # lazy init on miss only
         self.best_reward = -np.inf
         self.best_loss = np.inf
@@ -246,7 +275,7 @@ class BOBaseline:
     def _get_proxy(self) -> CropSimulatorProxy:
         if self.proxy is None:
             self.proxy = CropSimulatorProxy(
-                reward_cache_path=str(self.cache_path),
+                reward_cache_path=str(self.proxy_cache_path),
                 reward_mode=self.args.reward_mode,
                 beta=self.args.beta,
                 loss_norm=self.args.loss_norm,
@@ -448,14 +477,18 @@ def build_sweep_grid(args: argparse.Namespace) -> List[dict]:
         if args.threshold_temperatures is not None
         else [args.threshold_temperature]
     )
+    seeds = args.seeds if args.seeds is not None else [args.seed]
 
     grid = []
-    for beta, tau_q, temp in itertools.product(betas, tau_quantiles, temperatures):
+    for beta, tau_q, temp, seed in itertools.product(
+        betas, tau_quantiles, temperatures, seeds
+    ):
         grid.append(
             {
                 "beta": float(beta),
                 "tau_quantile": float(tau_q),
                 "threshold_temperature": float(temp),
+                "seed": int(seed),
             }
         )
     return grid
@@ -463,7 +496,8 @@ def build_sweep_grid(args: argparse.Namespace) -> List[dict]:
 
 def config_to_name(cfg: dict) -> str:
     return (
-        f"b{_slug(cfg['beta'])}"
+        f"seed{_slug(cfg['seed'])}"
+        f"_b{_slug(cfg['beta'])}"
         f"_tauq{_slug(cfg['tau_quantile'])}"
         f"_T{_slug(cfg['threshold_temperature'])}"
     )
@@ -473,6 +507,9 @@ def run_one_study(base_args: argparse.Namespace, overrides: dict) -> dict:
     args = copy.deepcopy(base_args)
     for k, v in overrides.items():
         setattr(args, k, v)
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
 
     config_name = config_to_name(overrides)
     base_name = args.study_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -486,7 +523,7 @@ def run_one_study(base_args: argparse.Namespace, overrides: dict) -> dict:
         name=run_name,
         job_type="optuna_sweep_member",
         config=vars(args),
-        reinit="finish",
+        reinit="finish_previous",
     )
     wandb.define_metric("*", step_metric="trial_step")
 
@@ -504,6 +541,7 @@ def run_one_study(base_args: argparse.Namespace, overrides: dict) -> dict:
 
     result = {
         "config_name": config_name,
+        "seed": int(args.seed),
         "beta": float(args.beta),
         "tau_quantile": float(args.tau_quantile),
         "threshold_temperature": float(args.threshold_temperature),
@@ -516,6 +554,7 @@ def run_one_study(base_args: argparse.Namespace, overrides: dict) -> dict:
         "output_dir": str(out_dir),
     }
 
+    wandb.summary["seed"] = int(args.seed)
     wandb.summary["best_reward"] = result["best_reward"]
     wandb.summary["best_loss"] = result["best_loss"]
     wandb.summary["cache_hits"] = result["cache_hits"]
@@ -533,6 +572,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--decay_factor", type=float, default=0.5)
     ap.add_argument("--n_trials", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seeds", type=int, nargs="+", default=None)
 
     ap.add_argument("--reward_cache_path", default="precomputed/reward_table_sf0.15.json")
     ap.add_argument(
@@ -552,10 +592,11 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--reward_epsilon", type=float, default=1e-3)
     ap.add_argument("--cache_save_every", type=int, default=25)
 
-    # sweep knobs
     ap.add_argument("--betas", type=float, nargs="+", default=None)
     ap.add_argument("--tau_quantiles", type=float, nargs="+", default=None)
     ap.add_argument("--threshold_temperatures", type=float, nargs="+", default=None)
+
+    ap.add_argument("--proxy_reward_cache_path", default=None)
 
     ap.add_argument("--wandb_project", default="optuna-crop-calibration")
     ap.add_argument("--wandb_entity", default=None)
@@ -578,7 +619,8 @@ def main() -> None:
 
     for cfg in grid:
         print(
-            f"[sweep] beta={cfg['beta']} "
+            f"[sweep] seed={cfg['seed']} "
+            f"beta={cfg['beta']} "
             f"tau_quantile={cfg['tau_quantile']} "
             f"T={cfg['threshold_temperature']}"
         )
@@ -601,13 +643,30 @@ def main() -> None:
                 }
                 for r in all_results
             ]
-        ).sort_values(["best_reward", "best_loss"], ascending=[False, True])
+        ).sort_values(["beta", "tau_quantile", "threshold_temperature", "seed"])
 
         summary_csv = summary_dir / "sweep_summary.csv"
         df.to_csv(summary_csv, index=False)
 
-        print("\nTop sweep results:")
-        for _, row in df.head(10).iterrows():
+        group_cols = ["beta", "tau_quantile", "threshold_temperature"]
+        agg = (
+            df.groupby(group_cols, as_index=False)
+            .agg(
+                mean_best_reward=("best_reward", "mean"),
+                std_best_reward=("best_reward", "std"),
+                mean_best_loss=("best_loss", "mean"),
+                std_best_loss=("best_loss", "std"),
+                mean_cache_hits=("cache_hits", "mean"),
+                mean_cache_misses=("cache_misses", "mean"),
+                n_runs=("seed", "count"),
+            )
+            .sort_values(["mean_best_reward", "mean_best_loss"], ascending=[False, True])
+        )
+        agg_csv = summary_dir / "sweep_summary_aggregated.csv"
+        agg.to_csv(agg_csv, index=False)
+
+        print("\nCompleted sweep members:")
+        for _, row in df.iterrows():
             print(
                 f"  {row['config_name']}"
                 f" | best_reward={row['best_reward']:.6f}"
@@ -616,8 +675,20 @@ def main() -> None:
                 f" | cache_misses={int(row['cache_misses'])}"
             )
 
+        print("\nAggregated by reward config:")
+        for _, row in agg.iterrows():
+            print(
+                f"  beta={row['beta']}"
+                f" tau_q={row['tau_quantile']}"
+                f" T={row['threshold_temperature']}"
+                f" | mean_best_reward={row['mean_best_reward']:.6f}"
+                f" | mean_best_loss={row['mean_best_loss']:.6f}"
+                f" | n={int(row['n_runs'])}"
+            )
+
         print(f"\n[saved] {summary_json}")
         print(f"[saved] {summary_csv}")
+        print(f"[saved] {agg_csv}")
 
 
 if __name__ == "__main__":
