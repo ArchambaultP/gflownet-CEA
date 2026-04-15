@@ -6,5 +6,31 @@
   "loss_norm": "q10q90",
   "q_low": 0.1,
   "q_high": 0.9,
-  "team_stats": {}
+  "team_stats": {
+    "Reference": {
+      "anchor": 0.7598064061900343,
+      "scale": 6.31209379269705
+    },
+    "Digilog": {
+      "anchor": 0.6546106094051186,
+      "scale": 3.6986134379646667
+    },
+    "IUACAAS": {
+      "anchor": 0.6150844780648287,
+      "scale": 0.8348972804165845
+    },
+    "Automatoes": {
+      "anchor": 0.7048074149159723,
+      "scale": 0.25738862564322407
+    },
+    "TheAutomators": {
+      "anchor": 1.087599222482885,
+      "scale": 8.299499163453245
+    },
+    "AICU": {
+      "anchor": 1.220658271489348,
+      "scale": 8.74354700741021
+    }
+  },
+  "n_states_exported": 2625
 }
