@@ -1,0 +1,33 @@
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_contextual_simple.CropSimulatorProxy
+
+device: ${device}
+float_precision: ${float_precision}
+
+reward_cache_path: precomputed_contextual/reward_table_sf0.15.json
+cache_save_every: 100
+
+reward_mode: context_kth_exp_simple
+beta: 4.0
+
+context_top_k: 3
+context_team_ids:
+  - AICU
+  - Automatoes
+  - Digilog
+  - IUACAAS
+  - Reference
+  - TheAutomators
+
+context_fallback_to_scalar: true
+scalar_fallback_reward_mode: softmin
+
+loss_norm: q10q90
+q_low: 0.10
+q_high: 0.90
+
+reward_anchor: null
+reward_scale: null
+reward_tau: null
+tau_quantile: 0.05
+threshold_temperature: 0.05
+reward_epsilon: 1.0e-3
