@@ -1,4 +1,4 @@
-_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_contextual_direct.CropSimulatorProxy
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_contextual.CropSimulatorProxy
 
 # Cache / precomputed table
 reward_cache_path: precomputed_contextual/reward_table_sf0.15.json
