@@ -259,48 +259,14 @@ def _mean_team_loss(team_losses: Iterable[Iterable[float]], failure_loss: float 
     return float(np.mean(per_team))
 
 
-
-def _load_module_from_path(module_name: str, path: Path):
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(module_name, str(path))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load module {module_name} from {path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def _batch_evaluate_if_supported(states, args):
-    """
-    Load a batch evaluator WITHOUT importing the fmu.pool package, because that
-    package __init__ may currently be broken by a bad PersistentFMUPool import.
-    """
-    candidates = []
-    if getattr(args, "batch_module_path", None):
-        candidates.append(Path(args.batch_module_path))
-    candidates.extend([
-        Path("batch_contextual.py"),
-        Path("fmu/pool/batch_contextual.py"),
-        Path("batch.py"),
-        Path("fmu/pool/batch.py"),
-    ])
-
-    evaluate_all = None
-    loaded_from = None
-    for idx, path in enumerate(candidates):
+    try:
+        from fmu.pool.batch_contextual import evaluate_all
+    except Exception:
         try:
-            if path.exists():
-                mod = _load_module_from_path(f"context_batch_mod_{idx}", path)
-                if hasattr(mod, "evaluate_all"):
-                    evaluate_all = mod.evaluate_all
-                    loaded_from = path
-                    break
-        except Exception as e:
-            print(f"  [INFO] Failed to load batch evaluator from {path}: {e}")
-
-    if evaluate_all is None:
-        print("  [INFO] No loadable batch evaluator found; falling back to direct evaluation.")
-        return None
+            from fmu.pool.batch import evaluate_all
+        except Exception:
+            return None
 
     sig = inspect.signature(evaluate_all)
     params = sig.parameters
@@ -316,7 +282,7 @@ def _batch_evaluate_if_supported(states, args):
     }
     if not required_args.issubset(params.keys()):
         print(
-            f"  [INFO] Batch evaluator at {loaded_from} does not expose the required arguments; "
+            "  [INFO] batch evaluator does not expose the required arguments; "
             "falling back to direct evaluation."
         )
         return None
@@ -336,7 +302,7 @@ def _batch_evaluate_if_supported(states, args):
         return_details=True,
     )
     filtered_kwargs = {k: v for k, v in call_kwargs.items() if k in params}
-    print(f"  [INFO] Using contextual batch evaluator from {loaded_from}")
+    print("  [INFO] Using contextual batch evaluator with per-context loss export")
     return evaluate_all(**filtered_kwargs)
 
 
@@ -533,8 +499,6 @@ def parse_args():
     parser.add_argument("--no_prefer_batch", dest="prefer_batch", action="store_false", help="Skip the batch evaluator and force direct PersistentFMUPool evaluation.")
     parser.set_defaults(prefer_batch=True)
     parser.add_argument("--n_workers", type=int, default=None)
-    parser.add_argument("--batch_module_path", type=str, default=None,
-                        help="Explicit path to batch_contextual.py or batch.py to avoid importing the broken fmu.pool package.")
     parser.add_argument("--log_every", type=int, default=25)
     parser.add_argument("--save_abs_errors_npz", action="store_true", help="Also save the raw exact |e| arrays as a compressed NPZ sidecar.")
     return parser.parse_args()
