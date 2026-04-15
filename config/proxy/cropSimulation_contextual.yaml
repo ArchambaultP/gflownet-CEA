@@ -1,0 +1,42 @@
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_contextual_direct.CropSimulatorProxy
+
+# Cache / precomputed table
+reward_cache_path: precomputed_contextual/reward_table_sf0.15.json
+cache_save_every: 100
+
+# Core reward mode
+reward_mode: context_topk_linear
+reward_epsilon: 1e-3
+
+# Contextual knobs
+context_top_k: 2
+context_tau: 0.20
+context_team_ids:
+  - Reference
+  - Digilog
+  - IUACAAS
+  - Automatoes
+  - TheAutomators
+  - AICU
+
+# Normalization used inside the contextual reward
+loss_norm: q10q90
+q_low: 0.10
+q_high: 0.90
+
+# Optional: if your contextual proxy supports it, keep this false
+# so you do not silently fall back to scalar reward
+# context_fallback_to_scalar: false
+
+# These are irrelevant for pure contextual reward, but I would still
+# keep them defined so the config stays compatible with shared code paths
+# beta: 1.0
+# reward_anchor: null
+# reward_scale: null
+# reward_tau: null
+# tau_quantile: 0.05
+# threshold_temperature: 0.04
+
+# Runtime
+device: ${device}
+float_precision: ${float_precision}
