@@ -1,0 +1,8 @@
+{
+  "step_fraction": 0.7,
+  "completed_states": 2625,
+  "total_states": 2625,
+  "remaining_states": 0,
+  "nonempty_loss_by_context_states": 2625,
+  "output_path": "precomputed_contextual/reward_table_sf0.7.json"
+}
