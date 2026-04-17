@@ -57,7 +57,7 @@ huber_delta = float(sys.argv[7])
 relative_floor_frac = float(sys.argv[8])
 relative_floor_abs = float(sys.argv[9])
 
-from gflownet.envs.greenhouse.constants import BASELINE_PARAMETERS, INITIAL_CONDITIONS
+from gflownet.envs.greenhouse.constants_unique_actions_vanthoor import BASELINE_PARAMETERS, INITIAL_CONDITIONS
 from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
 
 

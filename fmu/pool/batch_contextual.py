@@ -53,7 +53,7 @@ with open(args_file, 'rb') as f:
     ) = pickle.load(f)
 
 from fmu.tomato_controller import TomatoController
-from gflownet.envs.greenhouse.constants import BASELINE_PARAMETERS, INITIAL_CONDITIONS
+from gflownet.envs.greenhouse.constants_unique_actions_vanthoor import BASELINE_PARAMETERS, INITIAL_CONDITIONS
 from gflownet.proxy.greenhouse.cropSimulatorProxy import CropSimulatorProxy
 
 
