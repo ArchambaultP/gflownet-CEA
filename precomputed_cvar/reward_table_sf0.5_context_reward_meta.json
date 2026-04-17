@@ -1,0 +1,35 @@
+{
+  "reward_mode": "context_topk_linear",
+  "context_top_k": 2,
+  "context_tau": 0.2,
+  "reward_epsilon": 0.001,
+  "loss_norm": "q10q90",
+  "q_low": 0.1,
+  "q_high": 0.9,
+  "team_stats": {
+    "Reference": {
+      "anchor": 0.855515342484715,
+      "scale": 14.653924816348326
+    },
+    "Digilog": {
+      "anchor": 0.7308716023959944,
+      "scale": 11.366844827582918
+    },
+    "IUACAAS": {
+      "anchor": 0.7106803219711951,
+      "scale": 14.223887026223547
+    },
+    "Automatoes": {
+      "anchor": 0.759869223160906,
+      "scale": 18.944596817133583
+    },
+    "TheAutomators": {
+      "anchor": 0.7196653395793359,
+      "scale": 16.534023169360285
+    },
+    "AICU": {
+      "anchor": 0.6984440349017059,
+      "scale": 21.197389393528155
+    }
+  }
+}
