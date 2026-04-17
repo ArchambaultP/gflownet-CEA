@@ -363,7 +363,7 @@ class CropSimulatorProxy(Proxy):
         if self.pool is not None:
             return
         _dbg("[POOL CREATE START]")
-        from fmu.pool.persistent import PersistentFMUPool
+        from fmu.pool.persistent_contextual_cvar import PersistentFMUPool
         self.pool = PersistentFMUPool(
             self.teams,
             self.fmu_path,
