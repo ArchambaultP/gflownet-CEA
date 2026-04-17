@@ -7,7 +7,7 @@ from torchtyping import TensorType
 
 from .fmu_env import FMUEnv
 from gflownet.utils.common import tfloat
-from gflownet.envs.greenhouse.constants import (
+from gflownet.envs.greenhouse.constants_unique_actions_vanthoor import (
     GROUPS,
     BASELINE_PARAMETERS,
     GROUP_ORDER,
@@ -19,15 +19,22 @@ from gflownet.envs.greenhouse.constants import (
 
 class CropSimEnv(FMUEnv):
     """
-    Discrete greenhouse calibration environment with fixed group order.
+    Clean greenhouse environment with:
+    - unique action ids per group
+    - Vanthoor/baseline start point for perturbations
+    - correct self.n_actions update in forward step
+    - lightweight policy representation
 
-    Important design choice:
-    - There is NO explicit EOS action.
-    - A trajectory becomes terminal automatically after exactly
-      n_groups * n_cycles perturbation decisions.
+    Chosen states2policy:
+    - step fraction scalar
+    - depth one-hot
+    - slot-local action history
+    - normalized parameter vector
 
-    This keeps the environment consistent with the original step/backward logic
-    and avoids an extra invalid action in the policy output.
+    Rationale:
+    - the next group is already a deterministic function of depth
+    - so next-group one-hot and valid-action multi-hot are redundant
+    - this keeps the policy input minimal while still fully informative
     """
 
     def __init__(
@@ -41,8 +48,6 @@ class CropSimEnv(FMUEnv):
         **kwargs,
     ):
         self.source = [()]
-        # Keep an EOS sentinel only because the base class references self.eos in a
-        # few generic places. It is NOT part of the forward action space here.
         self.eos = -1
 
         self.group2id = {g: i for i, g in enumerate(GROUP_ORDER)}
@@ -65,11 +70,8 @@ class CropSimEnv(FMUEnv):
         self.precomputed = precomputed
 
         self.n_operations = self.n_groups * self.n_cycles
-
-        # For each slot in the trajectory, which group does it correspond to?
         self.slot_group_ids = [i % self.n_groups for i in range(self.n_operations)]
 
-        # For each slot, the valid action ids for that slot's group
         self.slot_action_ids = []
         self.slot_action_pos = []
         for group_id in self.slot_group_ids:
@@ -80,29 +82,23 @@ class CropSimEnv(FMUEnv):
             self.slot_action_ids.append(action_ids)
             self.slot_action_pos.append({a: j for j, a in enumerate(action_ids)})
 
-        # One-hot for depth 0..n_operations
+        # Lightweight policy input:
+        # [step_fraction] + [depth one-hot] + [slot-local history] + [normalized params]
         self.depth_dim = self.n_operations + 1
-
-        # Each slot gets (num_valid_actions_for_that_group + 1) dims
-        # The last position is the "unset" bit
         self.history_dim = sum(len(aids) + 1 for aids in self.slot_action_ids)
-
-        # Optional: useful for debugging
         self.policy_input_dim = 1 + self.depth_dim + self.history_dim + self.n_params
 
         super().__init__(fmu_path=fmu_path, device=device, **kwargs)
 
     def _apply_perturbation(self, step_fraction, group_name, perturb_name, values=None):
-        """
-        Apply the perturbation mode for one ontology group.
-        """
         if values is None:
             values = {}
 
         params = GROUPS[group_name]
         for p in params:
             lo, hi = PARAMETER_BOUNDS[p]
-            val = values.get(p, (hi + lo) / 2)
+            default_val = INITIAL_CONDITIONS.get(p, BASELINE_PARAMETERS[p])
+            val = values.get(p, default_val)
             direction = PERTURBATION_SCHEME[group_name][perturb_name][p]
             val = np.clip(val + direction * step_fraction * (hi - lo), lo, hi)
             values[p] = val
@@ -130,27 +126,20 @@ class CropSimEnv(FMUEnv):
         return combined_params
 
     def _build_action_space(self):
-        # Forward actions are ONLY perturbation ids.
         return list(self.id2pert.keys())
 
     def get_action_space(self):
         return self.action_space
 
-    def _n_decisions_made(self, state=None):
-        if state is None:
-            state = self._get_state(state)
-        return max(0, len(state) - 1)
-
     def _total_decisions(self):
         return self.n_groups * self.n_cycles
 
+    def _n_decisions_made(self, state=None):
+        state = self._get_state(state)
+        return max(0, len(state) - 1)
+
     def _next_position(self, state=None):
-        """
-        Return (cycle, group_id) for the NEXT forward decision.
-        Computed from trajectory depth, not from the stored last tuple.
-        """
-        if state is None:
-            state = self._get_state(state)
+        state = self._get_state(state)
         k = self._n_decisions_made(state)
         cycle = 1 + (k // self.n_groups)
         group_id = k % self.n_groups
@@ -159,9 +148,16 @@ class CropSimEnv(FMUEnv):
     def step(
         self, action: Tuple[int], skip_mask_check: bool = False
     ) -> Tuple[List[int], Tuple[int], bool]:
-        """
-        Execute one forward perturbation.
-        """
+        # Normalize action to a plain int to avoid tuple/tensor surprises.
+        if isinstance(action, (tuple, list)):
+            if len(action) != 1:
+                raise ValueError(f"Expected scalar or length-1 action, got {action}")
+            action = int(action[0])
+        elif torch.is_tensor(action):
+            action = int(action.item())
+        else:
+            action = int(action)
+
         do_step, state, action = self._pre_step(
             action, backward=False, skip_mask_check=skip_mask_check
         )
@@ -176,6 +172,7 @@ class CropSimEnv(FMUEnv):
         cycle, group_id = self._next_position(state)
         new_state = state + [(cycle, group_id, action)]
         self.state = new_state
+        self.n_actions += 1
         self.done = self._n_decisions_made(new_state) >= n_total
         return new_state, action, True
 
@@ -193,11 +190,6 @@ class CropSimEnv(FMUEnv):
             state = self._get_state(state)
             decisions = state[1:] if state != [()] else []
             depth = len(decisions)
-
-            # 1 scalar for step_fraction
-            # depth one-hot
-            # slot-wise history one-hot
-            # normalized parameter vector
             vec = [0.0] * self.policy_input_dim
 
             cursor = 0
@@ -210,28 +202,28 @@ class CropSimEnv(FMUEnv):
             vec[cursor + depth] = 1.0
             cursor += self.depth_dim
 
-            # 3) slot-wise one-hot history
+            # 3) slot-local history
             for slot_idx in range(self.n_operations):
                 valid_action_ids = self.slot_action_ids[slot_idx]
                 local_pos = self.slot_action_pos[slot_idx]
-                block_size = len(valid_action_ids) + 1  # +1 for "unset"
-
+                block_size = len(valid_action_ids) + 1
                 block = [0.0] * block_size
 
                 if slot_idx < depth:
                     chosen_action = decisions[slot_idx][2]
-                    block[local_pos[chosen_action]] = 1.0
+                    if chosen_action in local_pos:
+                        block[local_pos[chosen_action]] = 1.0
+                    else:
+                        block[-1] = 1.0
                 else:
-                    # unset
                     block[-1] = 1.0
 
                 vec[cursor : cursor + block_size] = block
                 cursor += block_size
 
-            # 4) normalized parameter vector
+            # 4) normalized parameters
             param_set = self.build_config(state, normalize=True)
             vec[cursor : cursor + self.n_params] = param_set
-
             out.append(vec)
 
         return tfloat(out, float_type=float32, device=self.device)
@@ -264,26 +256,17 @@ class CropSimEnv(FMUEnv):
         return self.step_fraction * self.decay_factor ** (cycle - 1)
 
     def _get_max_trajectory_length(self):
-        # No EOS action in the trajectory.
         return self._total_decisions()
 
-    def get_mask_invalid_actions_forward(
-        self,
-        state: Optional[List[Tuple[str, dict]]] = None,
-        done: Optional[bool] = None,
-    ) -> List[bool]:
-        """
-        True = invalid, False = valid.
-        """
-        if state is None:
-            state = self._get_state(state)
+    def get_mask_invalid_actions_forward(self, state=None, done=None):
+        state = self._get_state(state)
         if done is None:
             done = self._get_done(done)
 
         n_done = self._n_decisions_made(state)
         n_total = self._total_decisions()
         if done or n_done >= n_total:
-            return [True] * self.action_space_dim
+            return [True] * len(self.action_space)
 
         _, next_group_id = self._next_position(state)
         valid_action_values = {
@@ -323,7 +306,6 @@ class CropSimEnv(FMUEnv):
         return [parent_state], [last_pert]
 
     def actions2indices(self, actions):
-        # In this environment, action values are the policy indices.
         if torch.is_tensor(actions):
             return actions.long()
         return torch.tensor(actions, dtype=torch.long, device=self.device)

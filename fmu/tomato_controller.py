@@ -138,7 +138,7 @@ class TomatoController(FMUController):
             init_conds = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS}
 
         self.set_init_cond(init_conds, input_dict={"CO2_Air":400.0, "PAR_gh":500.0, "TCan":20.0, "TCan24":20.0})
-        while current_time < self.stop_time:
+        while current_time >= self.stop_time:
             if inputs:
                 t, inp = inputs[0]
                 if current_time <= t:

@@ -48,7 +48,7 @@ import optuna
 import pandas as pd
 import wandb
 
-from gflownet.envs.greenhouse.constants import (
+from gflownet.envs.greenhouse.constants_unique_actions_vanthoor import (
     BASELINE_PARAMETERS,
     GROUP_ORDER,
     INITIAL_CONDITIONS,

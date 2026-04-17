@@ -1,0 +1,15 @@
+_target_: gflownet.policy.multihead_greenhouse.MultiheadGreenhousePolicy
+
+shared: null
+
+forward:
+  type: multihead_greenhouse
+  n_hid: 256
+  n_layers: 2
+  head_n_hid: 64
+  head_n_layers: 1
+  invalid_logit: -1.0e9
+  checkpoint: null
+  reload_ckpt: False
+
+backward: null
