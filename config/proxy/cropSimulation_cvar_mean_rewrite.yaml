@@ -31,6 +31,14 @@ live_huber_delta: 1.0
 live_relative_floor_frac: 0.05
 live_relative_floor_abs: 1e-6
 pool_max_uses: 1
+pool_max_restarts: 3
 
-recalibrate_every: 64
+recalibrate_every: 256
 verbose_debug: true
+setpoint_mode: climate_start
+
+# auto-parallelism
+n_procs: 1
+reserve_cores: 4
+num_pool_shards: 0      # 0 => derive automatically from n_procs
+max_pool_shards: 0      # 0 => no extra cap
