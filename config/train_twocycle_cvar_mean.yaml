@@ -3,7 +3,7 @@ defaults:
   - gflownet: trajectorybalance
   - loss: trajectorybalance
   - policy: multihead_greenhouse
-  - proxy: cropSimulation_cvar_mean_rewrite
+  - proxy: cropSimulation_cvar_mean_quiet
   - logger: base
   - user: default
   - evaluator: base

@@ -1,0 +1,30 @@
+
+# Example quiet proxy config
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_contextual_cvar_blend_quiet.CropSimulatorProxy
+
+reward_cache_path: precomputed_cvar/reward_table_sf0.3_twocycle_live.json
+reward_mode: context_cvar_blend_exp_simple
+beta: 2
+cache_save_every: 100
+
+loss_norm: q10q90
+q_low: 0.10
+q_high: 0.90
+reward_epsilon: 1e-3
+
+context_top_k: 3
+context_tail_count: 2
+context_cvar_lambda: 0.25
+context_fallback_to_scalar: true
+scalar_fallback_reward_mode: softmin
+
+live_loss_type: absolute_relative
+live_huber_delta: 1.0
+live_relative_floor_frac: 0.05
+live_relative_floor_abs: 1e-6
+pool_eval_timeout: 120
+pool_max_restarts: 3
+
+# "climate_start" matches your newer simulator alignment.
+# If you want old shorter horizons for debugging, switch to "obs_start".
+setpoint_mode: climate_start
