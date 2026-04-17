@@ -26,6 +26,15 @@ loss_norm: q10q90
 q_low: 0.10
 q_high: 0.90
 
+live_eval_n_workers: 6
+live_eval_timeout: 600
+live_loss_type: absolute_relative
+live_huber_delta: 1.0
+live_relative_floor_frac: 0.05
+live_relative_floor_abs: 1e-6
+
+recalibrate_every: 64
+
 reward_anchor: null
 reward_scale: null
 reward_tau: null
