@@ -3,14 +3,14 @@ defaults:
   - gflownet: trajectorybalance
   - loss: trajectorybalance
   - policy: multihead_greenhouse
-  - proxy: cropSimulation_cvar_mean
-  - logger: wandb_artifact
+  - proxy: cropSimulation_cvar_mean_rewrite
+  - logger: base
   - user: default
   - evaluator: base
   - buffer: base
   - _self_
 
-device: cpu
+device: cuda
 float_precision: 32
 n_samples: 100
 seed: 0
@@ -31,8 +31,10 @@ env:
 
 gflownet:
   optimizer:
-    n_train_steps: 5000
+    n_train_steps: 2000
     lr_z_mult: 10
+    forward: 32
+    backward_replay: 0
 
 proxy:
   loss_norm: q10q90

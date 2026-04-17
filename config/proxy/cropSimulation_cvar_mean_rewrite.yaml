@@ -1,0 +1,36 @@
+
+# Replace your current proxy yaml with this block or point _target_ to this module.
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_contextual_cvar_blend_rewrite.CropSimulatorProxy
+
+reward_cache_path: precomputed_cvar/reward_table_sf0.3_twocycle_live.json
+reward_mode: context_cvar_blend_exp_simple
+beta: 2
+cache_save_every: 100
+
+loss_norm: q10q90
+q_low: 0.10
+q_high: 0.90
+reward_epsilon: 1e-3
+
+context_top_k: 3
+context_tail_count: 2
+context_cvar_lambda: 0.25
+context_fallback_to_scalar: true
+scalar_fallback_reward_mode: softmin
+
+# Live evaluation:
+# auto => batch_contextual for larger miss batches, pool for smaller ones
+live_eval_backend: auto
+batch_eval_min_pending: 8
+batch_eval_n_workers: 6
+batch_eval_timeout: 600
+pool_eval_timeout: 120
+
+live_loss_type: absolute_relative
+live_huber_delta: 1.0
+live_relative_floor_frac: 0.05
+live_relative_floor_abs: 1e-6
+pool_max_uses: 1
+
+recalibrate_every: 64
+verbose_debug: true
