@@ -9,6 +9,12 @@ cache_save_every: 100
 reward_mode: context_cvar_blend_exp_simple
 beta: 6.0
 
+data_dir: data/greenhouse/secondEdition
+fmu_path: fmu/FMU/tomato.fmu
+step_size: 120.0
+pool_max_uses: 1
+pool_max_restarts: 3
+
 context_tail_count: 2
 context_cvar_lambda: 0.25
 context_team_ids:
@@ -35,10 +41,4 @@ live_relative_floor_abs: 1e-6
 
 recalibrate_every: 64
 
-reward_anchor: null
-reward_scale: null
-reward_tau: null
-tau_quantile: 0.05
-threshold_temperature: 0.05
-reward_epsilon: 1.0e-3
 

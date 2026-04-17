@@ -1,3 +1,4 @@
+
 import hashlib
 import json
 import os
@@ -54,21 +55,35 @@ def _sigmoid(z: float) -> float:
 
 class CropSimulatorProxy(Proxy):
     """
-    Faster contextual proxy with batched live evaluation.
+    Contextual crop simulator proxy using PersistentFMUPool for fast live evaluation.
 
-    Main speed changes relative to the older version:
-    - batch all cache misses from a single __call__ into one evaluate_all(...) call
-    - deduplicate repeated misses within the same batch
-    - recalibrate contextual reward stats periodically instead of on every miss
-    - save cache periodically instead of on every miss
+    Key speed differences vs. the slow contextual proxy:
+    - reuses a single PersistentFMUPool instead of spawning subprocesses per miss
+    - batches cache misses inside __call__ and deduplicates repeated misses
+    - recalibrates contextual reward statistics periodically instead of on every miss
+
+    Cache-key handling:
+    - if the proxy item is a string, use it directly
+    - if the proxy item is (state_key, values), use state_key
+    - if the proxy item is {"state_key": ..., "values": ...}, use state_key
+    - otherwise fall back to a rounded-value hash
+
+    Expected reward_cache format:
+    {
+      "state_key_or_hash": {
+        "loss": <float>,
+        "loss_by_context": {"Reference": ..., ...}
+      }
+    }
     """
 
     def __init__(
         self,
         reward_cache_path: Optional[str] = None,
-        reward_mode: str = "thresholded_sigmoid",
+        reward_mode: str = "context_cvar_blend_exp_simple",
         beta: Optional[float] = None,
         cache_save_every: int = 100,
+        recalibrate_every: int = 64,
         loss_norm: str = "q10q90",
         q_low: float = 0.10,
         q_high: float = 0.90,
@@ -84,14 +99,16 @@ class CropSimulatorProxy(Proxy):
         context_team_ids: Optional[List[str]] = None,
         context_fallback_to_scalar: bool = True,
         scalar_fallback_reward_mode: str = "softmin",
-        # live-eval controls
-        live_eval_n_workers: int = 24,
-        live_eval_timeout: int = 600,
+        # live evaluation / pool settings
+        data_dir: str = "data/greenhouse/secondEdition",
+        fmu_path: str = "fmu/FMU/tomato.fmu",
+        step_size: float = 120.0,
+        pool_max_uses: int = 1,
+        pool_max_restarts: int = 3,
         live_loss_type: str = "absolute_relative",
         live_huber_delta: float = 1.0,
         live_relative_floor_frac: float = 0.05,
         live_relative_floor_abs: float = 1e-6,
-        recalibrate_every: int = 64,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -104,13 +121,14 @@ class CropSimulatorProxy(Proxy):
             "TheAutomators",
             "AICU",
         ]
-        self.data_dir = "data/greenhouse/secondEdition"
-        self.fmu_path = "fmu/FMU/tomato.fmu"
-        self.step_size = 120.0
+        self.data_dir = str(data_dir)
+        self.fmu_path = str(fmu_path)
+        self.step_size = float(step_size)
         self.parameter_names = sorted(BASELINE_PARAMETERS.keys())
 
         self.reward_mode = str(reward_mode)
         self.scalar_fallback_reward_mode = str(scalar_fallback_reward_mode)
+
         if self.reward_mode not in (SCALAR_REWARD_MODES | CONTEXT_REWARD_MODES):
             raise ValueError(f"Unsupported reward_mode: {self.reward_mode}")
         if self.scalar_fallback_reward_mode not in SCALAR_REWARD_MODES:
@@ -141,20 +159,22 @@ class CropSimulatorProxy(Proxy):
             raise ValueError("context_cvar_lambda must be in [0, 1].")
         self.context_fallback_to_scalar = bool(context_fallback_to_scalar)
 
-        self.live_eval_n_workers = int(max(1, live_eval_n_workers))
-        self.live_eval_timeout = int(max(1, live_eval_timeout))
         self.live_loss_type = str(live_loss_type)
         self.live_huber_delta = float(live_huber_delta)
         self.live_relative_floor_frac = float(live_relative_floor_frac)
         self.live_relative_floor_abs = float(live_relative_floor_abs)
-        self.recalibrate_every = int(max(1, recalibrate_every))
+
+        self.pool_max_uses = int(pool_max_uses)
+        self.pool_max_restarts = int(pool_max_restarts)
+        self.pool = None
 
         self.reward_cache: Dict[str, Dict[str, object]] = {}
         self.cache_hits = 0
         self.cache_misses = 0
         self.cache_new = 0
-        self.cache_new_since_recalibration = 0
         self.cache_save_every = int(cache_save_every)
+        self.recalibrate_every = max(int(recalibrate_every), 1)
+        self.new_since_recalibration = 0
         self.reward_cache_path = reward_cache_path
 
         self.context_rank_arrays: Dict[str, np.ndarray] = {}
@@ -169,14 +189,14 @@ class CropSimulatorProxy(Proxy):
             if reward_cache_path:
                 print(f"No cache found at {reward_cache_path} — will build lazily")
             else:
-                print("No reward cache path — will use live FMU evaluation (no persistent caching)")
+                print("No reward cache path — will use live FMU evaluation (no persistent cache)")
 
         self._maybe_init_reward_calibration_from_cache(force=True)
 
     def _contextual_reward_mode(self) -> bool:
         return self.reward_mode in CONTEXT_REWARD_MODES
 
-    def _make_fallback_hash_key(self, values):
+    def _hash_from_values(self, values) -> str:
         if hasattr(values, "tolist"):
             vals = values.tolist()
         elif isinstance(values, (list, tuple)):
@@ -186,36 +206,64 @@ class CropSimulatorProxy(Proxy):
         rounded = tuple(round(float(v), 8) for v in vals)
         return hashlib.sha256(str(rounded).encode()).hexdigest()[:16]
 
-    def _unpack_proxy_item(self, states_proxy_item):
-        """
-        Return (cache_key, values_like_or_none, used_fallback_hash).
-
-        Preferred inputs:
-        - state_key string
-        - (state_key, values) tuple/list
-        - {"state_key": ..., "values": ...} dict
-        - object with .state_key and optional .values
-
-        If no semantic key is available, we fall back to a hash of numeric values.
-        """
+    def _extract_cache_key_and_config(self, states_proxy_item):
+        # string: can only serve as semantic key unless cached already
         if isinstance(states_proxy_item, str):
-            return str(states_proxy_item), None, False
+            return states_proxy_item, None
 
+        # tuple/list form: (state_key, values_or_config)
+        if isinstance(states_proxy_item, (tuple, list)) and len(states_proxy_item) == 2 and isinstance(states_proxy_item[0], str):
+            state_key = str(states_proxy_item[0])
+            payload = states_proxy_item[1]
+            config = self._payload_to_config(payload)
+            return state_key, config
+
+        # dict form
         if isinstance(states_proxy_item, dict):
             if "state_key" in states_proxy_item:
-                key = str(states_proxy_item["state_key"])
-                values = states_proxy_item.get("values", states_proxy_item.get("config", None))
-                return key, values, False
+                state_key = str(states_proxy_item["state_key"])
+                if "config" in states_proxy_item:
+                    return state_key, {str(k): float(v) for k, v in states_proxy_item["config"].items()}
+                if "values" in states_proxy_item:
+                    return state_key, self._payload_to_config(states_proxy_item["values"])
+                return state_key, None
+            if "config" in states_proxy_item:
+                cfg = {str(k): float(v) for k, v in states_proxy_item["config"].items()}
+                return self._hash_from_values([cfg[k] for k in self.parameter_names]), cfg
 
-        if isinstance(states_proxy_item, (tuple, list)) and len(states_proxy_item) == 2 and isinstance(states_proxy_item[0], str):
-            return str(states_proxy_item[0]), states_proxy_item[1], False
-
+        # object with semantic state key
         if hasattr(states_proxy_item, "state_key"):
-            key = str(getattr(states_proxy_item, "state_key"))
-            values = getattr(states_proxy_item, "values", None)
-            return key, values, False
+            state_key = str(states_proxy_item.state_key)
+            if hasattr(states_proxy_item, "config"):
+                return state_key, {str(k): float(v) for k, v in states_proxy_item.config.items()}
+            if hasattr(states_proxy_item, "values"):
+                return state_key, self._payload_to_config(states_proxy_item.values)
+            return state_key, None
 
-        return self._make_fallback_hash_key(states_proxy_item), states_proxy_item, True
+        # fallback: hashed numeric vector
+        config = self._payload_to_config(states_proxy_item)
+        return self._hash_from_values([config[k] for k in self.parameter_names]), config
+
+    def _payload_to_config(self, payload) -> Optional[Dict[str, float]]:
+        if payload is None:
+            return None
+        if isinstance(payload, dict):
+            return {str(k): float(v) for k, v in payload.items()}
+
+        if hasattr(payload, "tolist"):
+            values = payload.tolist()
+        else:
+            values = list(payload)
+
+        if len(values) < len(self.parameter_names):
+            raise ValueError(
+                f"Proxy payload length {len(values)} is smaller than number of parameters {len(self.parameter_names)}"
+            )
+
+        config = {}
+        for i, name in enumerate(self.parameter_names):
+            config[name] = float(values[i])
+        return config
 
     def _load_cache(self, path):
         with open(path) as f:
@@ -228,12 +276,12 @@ class CropSimulatorProxy(Proxy):
                     str(team): float(val)
                     for team, val in entry.get("loss_by_context", {}).items()
                 }
-                self.reward_cache[key] = {
+                self.reward_cache[str(key)] = {
                     "loss": loss,
                     "loss_by_context": loss_by_context,
                 }
             else:
-                self.reward_cache[key] = {
+                self.reward_cache[str(key)] = {
                     "loss": float(entry),
                     "loss_by_context": {},
                 }
@@ -244,18 +292,17 @@ class CropSimulatorProxy(Proxy):
 
         cache_out = {}
         for key, entry in self.reward_cache.items():
-            cache_out[key] = {
+            cache_out[str(key)] = {
                 "loss": float(entry["loss"]),
                 "loss_by_context": {
-                    team: float(v) for team, v in entry.get("loss_by_context", {}).items()
+                    str(team): float(v)
+                    for team, v in entry.get("loss_by_context", {}).items()
                 },
             }
 
         os.makedirs(os.path.dirname(self.reward_cache_path) or ".", exist_ok=True)
-        tmp_path = self.reward_cache_path + ".tmp"
-        with open(tmp_path, "w") as f:
+        with open(self.reward_cache_path, "w") as f:
             json.dump(cache_out, f, indent=2)
-        os.replace(tmp_path, self.reward_cache_path)
 
     def _context_cache_available(self) -> bool:
         return any(entry.get("loss_by_context") for entry in self.reward_cache.values())
@@ -286,8 +333,7 @@ class CropSimulatorProxy(Proxy):
                 continue
             lo = float(np.quantile(arr, self.q_low))
             hi = float(np.quantile(arr, self.q_high))
-            scale = max(hi - lo, 1e-12)
-            out[team] = (lo, scale)
+            out[team] = (lo, max(hi - lo, 1e-12))
         return out
 
     def _maybe_init_reward_calibration_from_cache(self, force: bool = False):
@@ -322,6 +368,41 @@ class CropSimulatorProxy(Proxy):
             self.context_rank_arrays = self._build_context_rank_stats()
             self.context_quantile_stats = self._build_context_quantile_stats()
 
+        if self.reward_mode == "context_kth_exp_simple":
+            print(
+                "[reward calibration] "
+                f"mode={self.reward_mode}, k={self.context_top_k}, beta={self.beta}, "
+                f"contexts={sorted(self.context_rank_arrays.keys())}"
+            )
+        elif self.reward_mode == "context_cvar_exp_simple":
+            print(
+                "[reward calibration] "
+                f"mode={self.reward_mode}, tail_count={self.context_tail_count}, beta={self.beta}, "
+                f"contexts={sorted(self.context_quantile_stats.keys())}, "
+                f"q_low={self.q_low}, q_high={self.q_high}"
+            )
+        elif self.reward_mode == "context_cvar_blend_exp_simple":
+            print(
+                "[reward calibration] "
+                f"mode={self.reward_mode}, tail_count={self.context_tail_count}, "
+                f"lambda={self.context_cvar_lambda}, beta={self.beta}, "
+                f"contexts={sorted(self.context_quantile_stats.keys())}, "
+                f"q_low={self.q_low}, q_high={self.q_high}"
+            )
+        elif self.reward_mode == "thresholded_sigmoid":
+            print(
+                "[reward calibration] "
+                f"mode={self.reward_mode}, anchor={self.reward_anchor:.6g}, "
+                f"scale={self.reward_scale:.6g}, tau={self.reward_tau:.6g}, "
+                f"T={self.threshold_temperature}, eps={self.reward_epsilon}, beta={self.beta}"
+            )
+        elif self.reward_mode == "softmin":
+            print(
+                "[reward calibration] "
+                f"mode={self.reward_mode}, anchor={self.reward_anchor:.6g}, "
+                f"scale={self.reward_scale:.6g}, beta={self.beta}"
+            )
+
     def _normalize_loss(self, loss: float) -> float:
         if self.loss_norm == "none":
             return float(loss)
@@ -349,8 +430,7 @@ class CropSimulatorProxy(Proxy):
                 continue
             if team not in self.context_rank_arrays:
                 continue
-            loss = float(loss_by_context[team])
-            vals.append(self._percentile_rank(self.context_rank_arrays[team], loss))
+            vals.append(self._percentile_rank(self.context_rank_arrays[team], float(loss_by_context[team])))
         return vals
 
     def _transformed_context_values_cvar(self, loss_by_context: Dict[str, float]) -> List[float]:
@@ -361,8 +441,7 @@ class CropSimulatorProxy(Proxy):
             if team not in self.context_quantile_stats:
                 continue
             lo, scale = self.context_quantile_stats[team]
-            loss = float(loss_by_context[team])
-            vals.append((loss - lo) / max(scale, 1e-12))
+            vals.append((float(loss_by_context[team]) - lo) / max(scale, 1e-12))
         return vals
 
     def _scalar_loss_to_reward(self, loss: float, mode: Optional[str] = None) -> float:
@@ -392,12 +471,10 @@ class CropSimulatorProxy(Proxy):
                 if self.context_fallback_to_scalar:
                     return None
                 return max(self.reward_epsilon, 1e-12)
-
             vals_sorted = sorted(float(v) for v in vals)
             k = min(max(int(self.context_top_k), 1), len(vals_sorted))
             kth_rank = float(vals_sorted[k - 1])
-            reward = float(np.exp(-self.beta * kth_rank))
-            return max(reward, 1e-12)
+            return max(float(np.exp(-self.beta * kth_rank)), 1e-12)
 
         if self.reward_mode in {"context_cvar_exp_simple", "context_cvar_blend_exp_simple"}:
             vals = self._transformed_context_values_cvar(loss_by_context)
@@ -405,33 +482,62 @@ class CropSimulatorProxy(Proxy):
                 if self.context_fallback_to_scalar:
                     return None
                 return max(self.reward_epsilon, 1e-12)
-
             vals_sorted = sorted(float(v) for v in vals)
             m = min(max(int(self.context_tail_count), 1), len(vals_sorted))
             tail_mean = float(np.mean(vals_sorted[-m:]))
-
             if self.reward_mode == "context_cvar_exp_simple":
                 agg = tail_mean
             else:
                 mean_all = float(np.mean(vals_sorted))
                 agg = (1.0 - self.context_cvar_lambda) * mean_all + self.context_cvar_lambda * tail_mean
-
-            reward = float(np.exp(-self.beta * agg))
-            return max(reward, 1e-12)
+            return max(float(np.exp(-self.beta * agg)), 1e-12)
 
         raise ValueError(f"Unsupported contextual reward mode: {self.reward_mode}")
 
-    def _loss_to_reward(
-        self,
-        loss: float,
-        loss_by_context: Optional[Dict[str, float]] = None,
-    ) -> float:
+    def _loss_to_reward(self, loss: float, loss_by_context: Optional[Dict[str, float]] = None) -> float:
         if self._contextual_reward_mode():
             reward = self._context_loss_to_reward(loss_by_context or {})
             if reward is not None:
                 return reward
             return self._scalar_loss_to_reward(loss)
         return self._scalar_loss_to_reward(loss, mode=self.reward_mode)
+
+    def _init_pool(self):
+        from fmu.pool import PersistentFMUPool
+
+        if self.pool is None:
+            self.pool = PersistentFMUPool(
+                self.teams,
+                self.fmu_path,
+                self.data_dir,
+                step_size=self.step_size,
+                max_uses=self.pool_max_uses,
+                max_restarts=self.pool_max_restarts,
+                loss_type=self.live_loss_type,
+                huber_delta=self.live_huber_delta,
+                relative_floor_frac=self.live_relative_floor_frac,
+                relative_floor_abs=self.live_relative_floor_abs,
+            )
+
+    def _evaluate_live_with_pool(self, config: Dict[str, float]) -> Tuple[float, Dict[str, float]]:
+        self._init_pool()
+
+        full_config = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **config}
+        team_losses = self.pool.evaluate(full_config)
+        if not team_losses:
+            return 1e6, {}
+
+        ctx = {}
+        per_team = []
+        for team, errs in zip(self.teams, team_losses):
+            errs = list(errs)
+            if errs:
+                mean_err = float(np.mean(errs))
+                ctx[str(team)] = mean_err
+                per_team.append(mean_err)
+
+        scalar = float(np.mean(per_team)) if per_team else 1e6
+        return scalar, ctx
 
     def _should_recalibrate(self) -> bool:
         if self.reward_anchor is None or self.reward_scale is None:
@@ -440,153 +546,62 @@ class CropSimulatorProxy(Proxy):
             return True
         if self._contextual_reward_mode():
             if not self._context_cache_available():
-                return True
-            return self.cache_new_since_recalibration >= self.recalibrate_every
+                return False
+            return self.new_since_recalibration >= self.recalibrate_every
         return False
-
-    def _evaluate_live_batch(self, pending_configs: Dict[str, Optional[Dict[str, float]]]):
-        results: Dict[str, Dict[str, object]] = {}
-        if not pending_configs:
-            return results
-
-        string_failures = [k for k, cfg in pending_configs.items() if cfg is None]
-        for key in string_failures:
-            results[key] = {"loss": 1e6, "loss_by_context": {}}
-
-        numeric_states = {
-            (key,): dict(cfg)
-            for key, cfg in pending_configs.items()
-            if cfg is not None
-        }
-        if not numeric_states:
-            return results
-
-        if self._contextual_reward_mode():
-            try:
-                from fmu.pool.batch_contextual import evaluate_all
-            except Exception as e:
-                if not self.context_fallback_to_scalar:
-                    raise
-                print(f"[WARN] batch_contextual unavailable for live miss batch, falling back to scalar pool eval: {e}")
-            else:
-                losses, details = evaluate_all(
-                    states=numeric_states,
-                    fmu_path=self.fmu_path,
-                    team_ids=self.teams,
-                    data_dir=self.data_dir,
-                    n_workers=self.live_eval_n_workers,
-                    timeout=self.live_eval_timeout,
-                    verbose=False,
-                    loss_type=self.live_loss_type,
-                    huber_delta=self.live_huber_delta,
-                    relative_floor_frac=self.live_relative_floor_frac,
-                    relative_floor_abs=self.live_relative_floor_abs,
-                    return_details=True,
-                )
-                loss_by_context = details.get("loss_by_context", {}) if details else {}
-                for combo, params in numeric_states.items():
-                    key = combo[0]
-                    loss = float(losses.get(combo, 1e6))
-                    ctx = loss_by_context.get(combo, {})
-                    results[key] = {
-                        "loss": loss,
-                        "loss_by_context": {str(team): float(v) for team, v in ctx.items()},
-                    }
-                return results
-
-        from fmu.pool import PersistentFMUPool
-
-        if not hasattr(self, "pool"):
-            self.pool = PersistentFMUPool(
-                self.teams,
-                self.fmu_path,
-                self.data_dir,
-                step_size=self.step_size,
-                max_uses=1,
-            )
-
-        for combo, config in numeric_states.items():
-            key = combo[0]
-            full_config = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **config}
-            team_losses = self.pool.evaluate(full_config)
-            if not team_losses:
-                results[key] = {"loss": 1e6, "loss_by_context": {}}
-                continue
-
-            per_team = [float(np.mean(errs)) for errs in team_losses if len(errs)]
-            scalar = float(np.mean(per_team)) if per_team else 1e6
-            ctx = {}
-            for team, errs in zip(self.teams, team_losses):
-                errs = list(errs)
-                if errs:
-                    ctx[str(team)] = float(np.mean(errs))
-            results[key] = {"loss": scalar, "loss_by_context": ctx}
-
-        return results
 
     @torch.no_grad()
     def __call__(self, states_proxy):
         items = list(states_proxy)
-        cache_keys: List[str] = []
-        pending_configs: Dict[str, Optional[Dict[str, float]]] = {}
-        n_fallback_hash = 0
+        keys_in_order: List[str] = []
+        pending: Dict[str, Optional[Dict[str, float]]] = {}
 
-        for batch in items:
-            cache_key, values_like, used_fallback_hash = self._unpack_proxy_item(batch)
-            cache_keys.append(cache_key)
-            if used_fallback_hash:
-                n_fallback_hash += 1
-
+        # First pass: identify hits vs unique misses
+        for item in items:
+            cache_key, config = self._extract_cache_key_and_config(item)
+            keys_in_order.append(cache_key)
             if cache_key in self.reward_cache:
                 self.cache_hits += 1
-                continue
-
-            if cache_key in pending_configs:
-                continue
-
-            self.cache_misses += 1
-            if values_like is None:
-                pending_configs[cache_key] = None
             else:
-                values = values_like.tolist() if hasattr(values_like, "tolist") else list(values_like)
-                pending_configs[cache_key] = {
-                    name: float(values[i]) for i, name in enumerate(self.parameter_names)
-                }
+                self.cache_misses += 1
+                if cache_key not in pending:
+                    pending[cache_key] = config
 
-        if n_fallback_hash > 0:
-            print(f"  [CACHE] Warning: {n_fallback_hash} items in this batch used fallback hash keys because no semantic state_key was provided.", flush=True)
+        # Evaluate each unique miss once, reusing the persistent pool
+        if pending:
+            for cache_key, config in pending.items():
+                if config is None:
+                    loss, ctx = 1e6, {}
+                else:
+                    loss, ctx = self._evaluate_live_with_pool(config)
 
-        if pending_configs:
-            batch_results = self._evaluate_live_batch(pending_configs)
-            for cache_key, entry in batch_results.items():
                 self.reward_cache[cache_key] = {
-                    "loss": float(entry["loss"]),
-                    "loss_by_context": {
-                        team: float(v) for team, v in entry.get("loss_by_context", {}).items()
-                    },
+                    "loss": float(loss),
+                    "loss_by_context": {str(team): float(v) for team, v in (ctx or {}).items()},
                 }
-            self.cache_new += len(batch_results)
-            self.cache_new_since_recalibration += len(batch_results)
+                self.cache_new += 1
+                self.new_since_recalibration += 1
 
             if self._should_recalibrate():
                 self._maybe_init_reward_calibration_from_cache(force=True)
-                self.cache_new_since_recalibration = 0
+                self.new_since_recalibration = 0
 
             if self.reward_cache_path and self.cache_new >= self.cache_save_every:
                 self._save_cache()
                 print(
                     f"  [CACHE] Saved {len(self.reward_cache)} entries "
-                    f"({self.cache_hits} hits, {self.cache_misses} misses)",
-                    flush=True,
+                    f"({self.cache_hits} hits, {self.cache_misses} misses)"
                 )
                 self.cache_new = 0
 
+        # Second pass: compute rewards in original order
         out = []
-        for cache_key in cache_keys:
+        for cache_key in keys_in_order:
             entry = self.reward_cache[cache_key]
-            loss = float(entry["loss"])
-            loss_by_context = dict(entry.get("loss_by_context", {}))
-            reward = self._loss_to_reward(loss, loss_by_context)
+            reward = self._loss_to_reward(
+                float(entry["loss"]),
+                dict(entry.get("loss_by_context", {})),
+            )
             out.append(reward)
 
         return torch.tensor(out, dtype=self.float, device=self.device)
@@ -599,7 +614,8 @@ class CropSimulatorProxy(Proxy):
                 f"({self.cache_hits} hits, {self.cache_misses} misses)"
             )
             self.cache_new = 0
-        if hasattr(self, "pool"):
+
+        if self.pool is not None:
             try:
                 self.pool.shutdown()
             except Exception:
@@ -654,6 +670,7 @@ class CropSimulatorProxy(Proxy):
 
     @staticmethod
     def compute_trace(sim_df, delta="5min"):
+        sim_df = sim_df.copy()
         sim_df["Tair24"] = (
             sim_df["Tair"]
             .groupby(sim_df.index.date)
