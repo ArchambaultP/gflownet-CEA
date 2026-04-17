@@ -15,7 +15,7 @@ import wandb
 from gflownet.utils.common import gflownet_from_config
 
 
-@hydra.main(config_path="./config", config_name="train_twocycle_cvar_mean", version_base="1.1")
+@hydra.main(config_path="./config", config_name="train_twocycle_cvar_mean_batch", version_base="1.1")
 def main(config):
 
     # Set and print working and logging directory
