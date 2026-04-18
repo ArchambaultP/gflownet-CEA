@@ -3,7 +3,7 @@ defaults:
   - gflownet: trajectorybalance
   - loss: trajectorybalance
   - policy: multihead_greenhouse
-  - proxy: cropSimulation_cvar_mean_rewrite
+  - proxy: cropSimulation_cvar_mean_batch
   - logger: base
   - user: default
   - evaluator: base
@@ -34,7 +34,7 @@ gflownet:
     n_train_steps: 2000
     lr_z_mult: 10
     batch_size:
-      forward: 32
+      forward: 16
       backward: 0
       backward_replay: 0
 
@@ -56,6 +56,6 @@ hydra:
       seed: 0, 1
       gflownet.optimizer.lr: 5e-4
       gflownet.random_action_prob: 0.0
-      proxy.beta: 2, 4, 8
+      proxy.beta: 4
       proxy.context_tail_count: 2
       proxy.context_cvar_lambda: 0.25

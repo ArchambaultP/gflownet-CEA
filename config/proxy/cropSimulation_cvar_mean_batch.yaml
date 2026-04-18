@@ -1,0 +1,29 @@
+
+_target_: gflownet.proxy.greenhouse.cropSimulatorProxy_contextual_cvar_blend_batch.CropSimulatorProxy
+
+reward_cache_path: precomputed_cvar/live_twocycle_cache.json
+reward_mode: context_cvar_blend_exp_simple
+beta: 2
+cache_save_every: 500
+
+loss_norm: q10q90
+q_low: 0.10
+q_high: 0.90
+reward_epsilon: 1e-3
+
+context_top_k: 3
+context_tail_count: 2
+context_cvar_lambda: 0.25
+context_fallback_to_scalar: true
+scalar_fallback_reward_mode: softmin
+
+batch_eval_n_workers: 8   # 0 => use n_proc - reserve_cores
+batch_eval_timeout: 600
+
+live_loss_type: absolute_relative
+live_huber_delta: 1.0
+live_relative_floor_frac: 0.05
+live_relative_floor_abs: 1e-6
+
+recalibrate_every: 256
+verbose_debug: false

@@ -2,16 +2,14 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 from gflownet.proxy.base import Proxy
-from gflownet.envs.greenhouse.constants import BASELINE_PARAMETERS, INITIAL_CONDITIONS
+from gflownet.envs.greenhouse.constants import BASELINE_PARAMETERS
 
 
 SCALAR_REWARD_MODES = {"softmin", "thresholded_sigmoid"}
@@ -60,12 +58,13 @@ def _sigmoid(z):
 
 class CropSimulatorProxy(Proxy):
     """
-    Rewrite-style contextual crop simulator proxy with persistent-only live eval.
+    Batch-evaluator-first contextual proxy.
 
-    New in this version:
-    - optional state-level parallelism via multiple persistent pool shards
-    - safeguards against persisting empty loss_by_context rows
-    - debug logging can be disabled (default)
+    Design goals:
+    - always uses batch_contextual for live evaluation
+    - parallelism comes from n_proc / batch_eval_n_workers, not pool shards
+    - never persists corrupted contextual cache rows with empty loss_by_context
+    - quiet by default
     """
 
     def __init__(
@@ -73,7 +72,7 @@ class CropSimulatorProxy(Proxy):
         reward_cache_path: Optional[str] = None,
         reward_mode: str = "context_cvar_blend_exp_simple",
         beta: Optional[float] = None,
-        cache_save_every: int = 100,
+        cache_save_every: int = 500,
         loss_norm: str = "q10q90",
         q_low: float = 0.10,
         q_high: float = 0.90,
@@ -89,23 +88,17 @@ class CropSimulatorProxy(Proxy):
         context_team_ids: Optional[List[str]] = None,
         context_fallback_to_scalar: bool = True,
         scalar_fallback_reward_mode: str = "softmin",
-        # compatibility knobs retained
-        live_eval_backend: str = "pool",
-        batch_eval_min_pending: int = 8,
-        batch_eval_n_workers: int = 24,
+        # live eval controls
+        n_proc: int = 16,
+        reserve_cores: int = 2,
+        batch_eval_n_workers: int = 0,  # 0 => auto from n_proc - reserve_cores
         batch_eval_timeout: int = 600,
-        pool_eval_timeout: int = 120,
         live_loss_type: str = "absolute_relative",
         live_huber_delta: float = 1.0,
         live_relative_floor_frac: float = 0.05,
         live_relative_floor_abs: float = 1e-6,
-        pool_max_restarts: int = 3,
-        pool_max_uses: int = 1,
-        setpoint_mode: str = "climate_start",
-        recalibrate_every: int = 64,
+        recalibrate_every: int = 256,
         verbose_debug: bool = False,
-        # new speed knob
-        num_pool_shards: int = 1,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -120,7 +113,6 @@ class CropSimulatorProxy(Proxy):
         ]
         self.data_dir = "data/greenhouse/secondEdition"
         self.fmu_path = "fmu/FMU/tomato.fmu"
-        self.step_size = 120.0
         self.parameter_names = sorted(BASELINE_PARAMETERS.keys())
 
         self.reward_mode = str(reward_mode)
@@ -152,21 +144,17 @@ class CropSimulatorProxy(Proxy):
             raise ValueError("context_cvar_lambda must be in [0, 1].")
         self.context_fallback_to_scalar = bool(context_fallback_to_scalar)
 
-        self.live_eval_backend = str(live_eval_backend)  # ignored; persistent only
-        self.batch_eval_min_pending = _to_int(batch_eval_min_pending, "batch_eval_min_pending")  # ignored
-        self.batch_eval_n_workers = _to_int(batch_eval_n_workers, "batch_eval_n_workers")  # ignored
-        self.batch_eval_timeout = _to_int(batch_eval_timeout, "batch_eval_timeout")  # ignored
-        self.pool_eval_timeout = _to_int(pool_eval_timeout, "pool_eval_timeout")
+        self.n_proc = max(1, _to_int(n_proc, "n_proc"))
+        self.reserve_cores = max(0, _to_int(reserve_cores, "reserve_cores"))
+        requested_workers = _to_int(batch_eval_n_workers, "batch_eval_n_workers")
+        self.batch_eval_n_workers = requested_workers if requested_workers > 0 else max(1, self.n_proc - self.reserve_cores)
+        self.batch_eval_timeout = _to_int(batch_eval_timeout, "batch_eval_timeout")
         self.live_loss_type = str(live_loss_type)
         self.live_huber_delta = float(live_huber_delta)
         self.live_relative_floor_frac = float(live_relative_floor_frac)
         self.live_relative_floor_abs = float(live_relative_floor_abs)
-        self.pool_max_restarts = _to_int(pool_max_restarts, "pool_max_restarts")
-        self.pool_max_uses = _to_int(pool_max_uses, "pool_max_uses")
-        self.setpoint_mode = str(setpoint_mode)
         self.recalibrate_every = _to_int(recalibrate_every, "recalibrate_every")
         self.verbose_debug = bool(verbose_debug)
-        self.num_pool_shards = max(1, _to_int(num_pool_shards, "num_pool_shards"))
 
         self.reward_cache: Dict[str, Dict[str, object]] = {}
         self.cache_hits = 0
@@ -178,9 +166,11 @@ class CropSimulatorProxy(Proxy):
 
         self.context_rank_arrays: Dict[str, np.ndarray] = {}
         self.context_quantile_stats: Dict[str, Tuple[float, float]] = {}
-        self.pools = None
 
-        self._dbg(f"[PROXY INIT] pid={os.getpid()} persistent_only=True shards={self.num_pool_shards}")
+        self._dbg(
+            f"[PROXY INIT] batch_only=True n_proc={self.n_proc} "
+            f"reserve_cores={self.reserve_cores} workers={self.batch_eval_n_workers}"
+        )
 
         if reward_cache_path and os.path.exists(reward_cache_path):
             self._load_cache(reward_cache_path)
@@ -332,11 +322,6 @@ class CropSimulatorProxy(Proxy):
             self.context_rank_arrays = self._build_context_rank_stats()
             self.context_quantile_stats = self._build_context_quantile_stats()
 
-        self._dbg(
-            f"[CALIBRATE] force={force} cache={len(self.reward_cache)} "
-            f"anchor={self.reward_anchor} scale={self.reward_scale} tau={self.reward_tau}"
-        )
-
     def _should_recalibrate(self) -> bool:
         if self.reward_anchor is None or self.reward_scale is None:
             return True
@@ -424,66 +409,6 @@ class CropSimulatorProxy(Proxy):
             rewards.append(float(np.exp(-self.beta * agg)))
         return np.maximum(np.asarray(rewards, dtype=float), 1e-12)
 
-    def _build_pool_kwargs(self):
-        from fmu.pool.persistent_contextual_cvar import PersistentFMUPool
-        sig = inspect.signature(PersistentFMUPool.__init__)
-        kwargs = {
-            "step_size": self.step_size,
-            "loss_type": self.live_loss_type,
-            "huber_delta": self.live_huber_delta,
-            "relative_floor_frac": self.live_relative_floor_frac,
-            "relative_floor_abs": self.live_relative_floor_abs,
-        }
-        if "max_restarts" in sig.parameters:
-            kwargs["max_restarts"] = self.pool_max_restarts
-        if "max_uses" in sig.parameters:
-            kwargs["max_uses"] = self.pool_max_uses
-        if "setpoint_mode" in sig.parameters:
-            kwargs["setpoint_mode"] = self.setpoint_mode
-        if "verbose" in sig.parameters:
-            kwargs["verbose"] = False
-        return PersistentFMUPool, kwargs
-
-    def _ensure_pools(self):
-        if self.pools is not None:
-            return
-
-        self._dbg(f"[POOL CREATE START] shards={self.num_pool_shards}")
-        PersistentFMUPool, kwargs = self._build_pool_kwargs()
-        pools = []
-        for _ in range(self.num_pool_shards):
-            pools.append(
-                PersistentFMUPool(
-                    self.teams,
-                    self.fmu_path,
-                    self.data_dir,
-                    **kwargs,
-                )
-            )
-        self.pools = pools
-        self._dbg("[POOL CREATE DONE]")
-
-    def _evaluate_one_with_pool(self, pool, config: Dict[str, float]) -> Dict[str, object]:
-        full_config = {**BASELINE_PARAMETERS, **INITIAL_CONDITIONS, **config}
-
-        if self._contextual_reward_mode():
-            team_results = pool.evaluate_contextual(full_config, timeout=self.pool_eval_timeout)
-            ctx = {}
-            means = []
-            for team, point_losses in team_results.items():
-                if point_losses:
-                    m = float(np.mean(point_losses))
-                    if np.isfinite(m):
-                        ctx[str(team)] = m
-                        means.append(m)
-            scalar = float(np.mean(means)) if means else 1e6
-            return {"loss": scalar, "loss_by_context": ctx}
-
-        team_losses = pool.evaluate(full_config, timeout=self.pool_eval_timeout)
-        means = [float(np.mean(x)) for x in team_losses if x]
-        scalar = float(np.mean(means)) if means else 1e6
-        return {"loss": scalar, "loss_by_context": {}}
-
     def _evaluate_live_batch(self, pending_configs: Dict[str, Optional[Dict[str, float]]]) -> Dict[str, Dict[str, object]]:
         results: Dict[str, Dict[str, object]] = {}
         if not pending_configs:
@@ -493,49 +418,37 @@ class CropSimulatorProxy(Proxy):
             if cfg is None:
                 results[key] = {"loss": 1e6, "loss_by_context": {}}
 
-        numeric_items = [(key, cfg) for key, cfg in pending_configs.items() if cfg is not None]
-        if not numeric_items:
+        numeric_states = {key: cfg for key, cfg in pending_configs.items() if cfg is not None}
+        if not numeric_states:
             return results
 
-        self._ensure_pools()
+        from fmu.pool.batch_contextual import evaluate_all
 
-        if len(self.pools) == 1 or len(numeric_items) == 1:
-            self._dbg(f"[POOL EVAL SEQ] n_states={len(numeric_items)}")
-            pool = self.pools[0]
-            for key, cfg in numeric_items:
-                try:
-                    results[key] = self._evaluate_one_with_pool(pool, cfg)
-                except Exception as e:
-                    self._dbg(f"[POOL EVAL FAIL] key={key} {type(e).__name__}: {e}")
-                    results[key] = {"loss": 1e6, "loss_by_context": {}}
-            return results
+        states = {(key,): cfg for key, cfg in numeric_states.items()}
+        losses, details = evaluate_all(
+            states=states,
+            fmu_path=self.fmu_path,
+            team_ids=self.teams,
+            data_dir=self.data_dir,
+            n_workers=self.batch_eval_n_workers,
+            timeout=self.batch_eval_timeout,
+            verbose=False,
+            loss_type=self.live_loss_type,
+            huber_delta=self.live_huber_delta,
+            relative_floor_frac=self.live_relative_floor_frac,
+            relative_floor_abs=self.live_relative_floor_abs,
+            return_details=True,
+        )
 
-        # shard states across multiple pools
-        chunks: List[List[Tuple[str, Dict[str, float]]]] = [[] for _ in range(len(self.pools))]
-        for idx, item in enumerate(numeric_items):
-            chunks[idx % len(self.pools)].append(item)
+        loss_by_context = details.get("loss_by_context", {}) if isinstance(details, dict) else {}
 
-        self._dbg(f"[POOL EVAL PAR] n_states={len(numeric_items)} shards={len(self.pools)}")
-
-        def _run_chunk(pool_idx: int, chunk: List[Tuple[str, Dict[str, float]]]):
-            local = {}
-            pool = self.pools[pool_idx]
-            for key, cfg in chunk:
-                try:
-                    local[key] = self._evaluate_one_with_pool(pool, cfg)
-                except Exception as e:
-                    local[key] = {"loss": 1e6, "loss_by_context": {}}
-                    self._dbg(f"[POOL EVAL FAIL] key={key} shard={pool_idx} {type(e).__name__}: {e}")
-            return local
-
-        with ThreadPoolExecutor(max_workers=min(len(self.pools), len(numeric_items))) as ex:
-            futures = [
-                ex.submit(_run_chunk, i, chunk)
-                for i, chunk in enumerate(chunks)
-                if chunk
-            ]
-            for fut in as_completed(futures):
-                results.update(fut.result())
+        for tup_key, loss in losses.items():
+            key = tup_key[0] if isinstance(tup_key, tuple) else str(tup_key)
+            ctx = loss_by_context.get(tup_key, loss_by_context.get(key, {}))
+            results[key] = {
+                "loss": float(loss),
+                "loss_by_context": {str(team): float(v) for team, v in ctx.items()},
+            }
 
         return results
 
@@ -596,9 +509,3 @@ class CropSimulatorProxy(Proxy):
         if self.cache_new > 0:
             self._save_cache()
             self.cache_new = 0
-        if self.pools is not None:
-            for pool in self.pools:
-                try:
-                    pool.shutdown()
-                except Exception:
-                    pass
