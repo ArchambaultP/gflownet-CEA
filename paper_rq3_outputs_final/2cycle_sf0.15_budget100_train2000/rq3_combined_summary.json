@@ -1,0 +1,227 @@
+{
+  "n_seeds": 2,
+  "n_cycles": 2,
+  "step_fraction": 0.15,
+  "decay_factor": 0.5,
+  "retrieval_budget": 100,
+  "train_budget": 2000,
+  "beta": null,
+  "total_budget": 2100,
+  "diversity_top_k": 20,
+  "top_loss_k": 10,
+  "fmu_path": "fmu/FMU/tomato.fmu",
+  "data_dir": "data/greenhouse/secondEdition",
+  "n_unique_states_requested": 5953,
+  "n_states_evaluated": 5953,
+  "cache_path": "paper_rq3_outputs_final/2cycle_sf0.15_budget100_train2000/evaluated_state_losses_cache.csv",
+  "best_state_keys_equal": {
+    "TPE": "canopy__decrease|photo__lower_sensitivity|temp_inhib__shift_cold|temp_dev__decrease|biomass__more_veg_growth|canopy__decrease|photo__higher_sensitivity|temp_inhib__none|temp_dev__lower_sensitivity|biomass__higher_resp_cost",
+    "GFN": "canopy__none|photo__higher_sensitivity|temp_inhib__narrow_optimum|temp_dev__decrease|biomass__more_veg_growth|canopy__decrease|photo__decrease|temp_inhib__none|temp_dev__lower_sensitivity|biomass__more_veg_growth",
+    "Random": "canopy__none|photo__decrease|temp_inhib__shift_cold|temp_dev__decrease|biomass__lower_sensitivity|canopy__decrease|photo__decrease|temp_inhib__widen_optimum|temp_dev__decrease|biomass__more_veg_growth"
+  },
+  "best_state_keys_total": {
+    "TPE": "canopy__none|photo__decrease|temp_inhib__shift_cold|temp_dev__decrease|biomass__higher_resp_cost|canopy__none|photo__decrease|temp_inhib__shift_cold|temp_dev__lower_sensitivity|biomass__higher_resp_cost",
+    "GFN": "canopy__none|photo__higher_sensitivity|temp_inhib__narrow_optimum|temp_dev__decrease|biomass__more_veg_growth|canopy__decrease|photo__decrease|temp_inhib__none|temp_dev__lower_sensitivity|biomass__more_veg_growth",
+    "Random": "canopy__none|photo__decrease|temp_inhib__shift_cold|temp_dev__decrease|biomass__higher_resp_cost|canopy__increase|photo__decrease|temp_inhib__narrow_optimum|temp_dev__lower_sensitivity|biomass__more_veg_growth"
+  },
+  "best_state_losses_total": {
+    "TPE": 0.5264679612802015,
+    "GFN": 0.5370541502161491,
+    "Random": 0.5310991959495911
+  },
+  "equal_summary_rows": [
+    {
+      "Method": "TPE",
+      "Best final loss mean": 0.5417977953998736,
+      "Best final loss std": 0.002856539615435083,
+      "Median top-loss-k mean": 0.5598880528270764,
+      "Median top-loss-k std": 0.008911128601408802,
+      "Unique states mean": 51.5,
+      "Unique states std": 0.5,
+      "Mean Hamming top-unique mean": 5.186842105263159,
+      "Mean Hamming top-unique std": 0.3078947368421052
+    },
+    {
+      "Method": "GFN",
+      "Best final loss mean": 0.5392523413768766,
+      "Best final loss std": 0.002198191160727503,
+      "Median top-loss-k mean": 0.5612860452625438,
+      "Median top-loss-k std": 0.0010341932642609075,
+      "Unique states mean": 100.0,
+      "Unique states std": 0.0,
+      "Mean Hamming top-unique mean": 6.813157894736841,
+      "Mean Hamming top-unique std": 0.12368421052631584
+    },
+    {
+      "Method": "Random",
+      "Best final loss mean": 0.5474188986161402,
+      "Best final loss std": 0.005921408723279731,
+      "Median top-loss-k mean": 0.7086565338663099,
+      "Median top-loss-k std": 0.0450099120138604,
+      "Unique states mean": 100.0,
+      "Unique states std": 0.0,
+      "Mean Hamming top-unique mean": 7.405263157894737,
+      "Mean Hamming top-unique std": 0.0631578947368423
+    }
+  ],
+  "total_summary_rows": [
+    {
+      "Method": "TPE",
+      "Best final loss mean": 0.5283210834037131,
+      "Best final loss std": 0.0018531221235116857,
+      "Median top-loss-k mean": 0.5312438852337257,
+      "Median top-loss-k std": 0.0019589667693832302,
+      "Unique states mean": 678.0,
+      "Unique states std": 5.0,
+      "Mean Hamming top-unique mean": 3.1947368421052635,
+      "Mean Hamming top-unique std": 0.2894736842105263
+    },
+    {
+      "Method": "GFN",
+      "Best final loss mean": 0.5392523413768766,
+      "Best final loss std": 0.002198191160727503,
+      "Median top-loss-k mean": 0.5612860452625438,
+      "Median top-loss-k std": 0.0010341932642609075,
+      "Unique states mean": 100.0,
+      "Unique states std": 0.0,
+      "Mean Hamming top-unique mean": 6.813157894736841,
+      "Mean Hamming top-unique std": 0.12368421052631584
+    },
+    {
+      "Method": "Random",
+      "Best final loss mean": 0.531375996169749,
+      "Best final loss std": 0.0002768002201578579,
+      "Median top-loss-k mean": 0.5447839683529212,
+      "Median top-loss-k std": 0.0010148139904115894,
+      "Unique states mean": 2099.0,
+      "Unique states std": 1.0,
+      "Mean Hamming top-unique mean": 6.128947368421052,
+      "Mean Hamming top-unique std": 0.08684210526315761
+    }
+  ],
+  "equal_per_seed_rows": [
+    {
+      "best_final_loss": 0.5414505325376041,
+      "mean_sampled_loss": 1.1883717362754473,
+      "median_sampled_loss": 0.8894677773402501,
+      "median_top_loss_k": 0.5602518519982829,
+      "unique_states": 100,
+      "mean_hamming_top_unique": 6.689473684210526,
+      "method": "GFN",
+      "seed_index": 0
+    },
+    {
+      "best_final_loss": 0.5446543350153087,
+      "mean_sampled_loss": 1.2182876112886902,
+      "median_sampled_loss": 0.6739631199081906,
+      "median_top_loss_k": 0.5687991814284852,
+      "unique_states": 52,
+      "mean_hamming_top_unique": 5.494736842105263,
+      "method": "TPE",
+      "seed_index": 0
+    },
+    {
+      "best_final_loss": 0.5414974898928605,
+      "mean_sampled_loss": 2.4239008993969495,
+      "median_sampled_loss": 2.1273353322207704,
+      "median_top_loss_k": 0.7536664458801703,
+      "unique_states": 100,
+      "mean_hamming_top_unique": 7.468421052631579,
+      "method": "Random",
+      "seed_index": 0
+    },
+    {
+      "best_final_loss": 0.5370541502161491,
+      "mean_sampled_loss": 1.0839206869192097,
+      "median_sampled_loss": 0.9084581620217498,
+      "median_top_loss_k": 0.5623202385268047,
+      "unique_states": 100,
+      "mean_hamming_top_unique": 6.936842105263158,
+      "method": "GFN",
+      "seed_index": 1
+    },
+    {
+      "best_final_loss": 0.5389412557844385,
+      "mean_sampled_loss": 1.3823624826441543,
+      "median_sampled_loss": 0.6683387237571812,
+      "median_top_loss_k": 0.5509769242256676,
+      "unique_states": 51,
+      "mean_hamming_top_unique": 4.878947368421053,
+      "method": "TPE",
+      "seed_index": 1
+    },
+    {
+      "best_final_loss": 0.55334030733942,
+      "mean_sampled_loss": 2.3593220552742253,
+      "median_sampled_loss": 2.25101617832608,
+      "median_top_loss_k": 0.6636466218524495,
+      "unique_states": 100,
+      "mean_hamming_top_unique": 7.342105263157895,
+      "method": "Random",
+      "seed_index": 1
+    }
+  ],
+  "total_per_seed_rows": [
+    {
+      "best_final_loss": 0.5414505325376041,
+      "mean_sampled_loss": 1.1883717362754473,
+      "median_sampled_loss": 0.8894677773402501,
+      "median_top_loss_k": 0.5602518519982829,
+      "unique_states": 100,
+      "mean_hamming_top_unique": 6.689473684210526,
+      "method": "GFN",
+      "seed_index": 0
+    },
+    {
+      "best_final_loss": 0.5264679612802015,
+      "mean_sampled_loss": 0.8191631283538788,
+      "median_sampled_loss": 0.5597767364263807,
+      "median_top_loss_k": 0.5292849184643424,
+      "unique_states": 673,
+      "mean_hamming_top_unique": 3.4842105263157896,
+      "method": "TPE",
+      "seed_index": 0
+    },
+    {
+      "best_final_loss": 0.5310991959495911,
+      "mean_sampled_loss": 2.4042270432043096,
+      "median_sampled_loss": 2.2723586481055476,
+      "median_top_loss_k": 0.5457987823433328,
+      "unique_states": 2098,
+      "mean_hamming_top_unique": 6.21578947368421,
+      "method": "Random",
+      "seed_index": 0
+    },
+    {
+      "best_final_loss": 0.5370541502161491,
+      "mean_sampled_loss": 1.0839206869192097,
+      "median_sampled_loss": 0.9084581620217498,
+      "median_top_loss_k": 0.5623202385268047,
+      "unique_states": 100,
+      "mean_hamming_top_unique": 6.936842105263158,
+      "method": "GFN",
+      "seed_index": 1
+    },
+    {
+      "best_final_loss": 0.5301742055272248,
+      "mean_sampled_loss": 0.7787447441350189,
+      "median_sampled_loss": 0.5699357427407474,
+      "median_top_loss_k": 0.5332028520031089,
+      "unique_states": 683,
+      "mean_hamming_top_unique": 2.905263157894737,
+      "method": "TPE",
+      "seed_index": 1
+    },
+    {
+      "best_final_loss": 0.5316527963899068,
+      "mean_sampled_loss": 2.3679494887772767,
+      "median_sampled_loss": 2.243485074120213,
+      "median_top_loss_k": 0.5437691543625096,
+      "unique_states": 2100,
+      "mean_hamming_top_unique": 6.042105263157895,
+      "method": "Random",
+      "seed_index": 1
+    }
+  ],
+  "fake_data": false
+}
